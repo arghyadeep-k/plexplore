@@ -1,0 +1,33 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+
+# Go test/coverage artifacts
+*.test
+*.prof
+*.cover
+coverage.out
+
+# Runtime data and local state
+/data/
+/tmp/
+*.log
+*.pid
+
+# Node dependencies (present in local workspace)
+/node_modules/
+
+# Environment/local config
+.env
+.env.*
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
