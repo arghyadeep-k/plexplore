@@ -25,15 +25,16 @@ type visitResponse struct {
 	CentroidLat float64 `json:"centroid_lat"`
 	CentroidLon float64 `json:"centroid_lon"`
 	PointCount  int     `json:"point_count"`
+	PlaceLabel  string  `json:"place_label,omitempty"`
 }
 
 type listVisitsResponse struct {
 	Visits []visitResponse `json:"visits"`
 }
 
-func registerVisitRoutes(mux *http.ServeMux, visitStore VisitStore) {
+func registerVisitRoutes(mux *http.ServeMux, visitStore VisitStore, labelResolver VisitLabelResolver) {
 	mux.HandleFunc("POST /api/v1/visits/generate", generateVisitsHandler(visitStore))
-	mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(visitStore))
+	mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(visitStore, labelResolver))
 }
 
 func generateVisitsHandler(visitStore VisitStore) http.HandlerFunc {
@@ -95,7 +96,7 @@ func generateVisitsHandler(visitStore VisitStore) http.HandlerFunc {
 	}
 }
 
-func listVisitsHandler(visitStore VisitStore) http.HandlerFunc {
+func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 		fromUTC, err := parseOptionalRFC3339Param(r.URL.Query().Get("from"))
@@ -124,9 +125,18 @@ func listVisitsHandler(visitStore VisitStore) http.HandlerFunc {
 			return
 		}
 
+		remainingProviderLookups := 0
+		useResolver := labelResolver != nil && labelResolver.Enabled()
+		if useResolver {
+			remainingProviderLookups = labelResolver.MaxProviderLookupsPerRequest()
+			if remainingProviderLookups < 0 {
+				remainingProviderLookups = 0
+			}
+		}
+
 		out := make([]visitResponse, 0, len(items))
 		for _, item := range items {
-			out = append(out, visitResponse{
+			resp := visitResponse{
 				ID:          item.ID,
 				DeviceID:    item.DeviceID,
 				StartAt:     item.StartAt.UTC().Format(time.RFC3339Nano),
@@ -134,7 +144,23 @@ func listVisitsHandler(visitStore VisitStore) http.HandlerFunc {
 				CentroidLat: item.CentroidLat,
 				CentroidLon: item.CentroidLon,
 				PointCount:  item.PointCount,
-			})
+			}
+			if useResolver {
+				allowProvider := remainingProviderLookups > 0
+				label, usedProvider, resolveErr := labelResolver.ResolveVisitLabel(
+					r.Context(),
+					item.CentroidLat,
+					item.CentroidLon,
+					allowProvider,
+				)
+				if usedProvider && remainingProviderLookups > 0 {
+					remainingProviderLookups--
+				}
+				if resolveErr == nil {
+					resp.PlaceLabel = strings.TrimSpace(label)
+				}
+			}
+			out = append(out, resp)
 		}
 		writeJSON(w, http.StatusOK, listVisitsResponse{Visits: out})
 	}

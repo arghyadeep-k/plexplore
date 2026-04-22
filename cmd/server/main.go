@@ -18,6 +18,7 @@ import (
 	"plexplore/internal/spool"
 	"plexplore/internal/store"
 	"plexplore/internal/tasks"
+	"plexplore/internal/visits"
 )
 
 func main() {
@@ -75,6 +76,18 @@ func main() {
 
 	batchFlusher.Start()
 	var draining atomic.Bool
+	visitLabelResolver, err := visits.NewLabelResolver(visits.ReverseGeocodeConfig{
+		Enabled:              cfg.ReverseGeocodeEnabled,
+		Provider:             cfg.ReverseGeocodeProvider,
+		NominatimURL:         cfg.ReverseGeocodeNominatimURL,
+		UserAgent:            cfg.ReverseGeocodeUserAgent,
+		Timeout:              cfg.ReverseGeocodeTimeout,
+		CacheDecimals:        cfg.ReverseGeocodeCacheDecimals,
+		MaxLookupsPerRequest: cfg.ReverseGeocodeMaxLookupsPerRequest,
+	}, sqliteStore)
+	if err != nil {
+		log.Fatalf("configure reverse geocode resolver: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	api.RegisterRoutesWithDependencies(mux, api.Dependencies{
@@ -86,6 +99,7 @@ func main() {
 		FlushTriggerBytes:  cfg.FlushTriggerBytes,
 		PointStore:         sqliteStore,
 		VisitStore:         sqliteStore,
+		VisitLabelResolver: visitLabelResolver,
 		SpoolDir:           cfg.SpoolDir,
 		SQLitePath:         cfg.SQLitePath,
 		IsDraining: func() bool {

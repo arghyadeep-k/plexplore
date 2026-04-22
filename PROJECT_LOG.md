@@ -1951,3 +1951,74 @@ Known issues:
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 - Visit range generation rewrites visits by `start_at` window, so visits spanning window edges may be clipped by chosen range.
 - Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 21:38 UTC - Phase 49 (Optional Visit-Centroid Reverse Geocode Cache)
+Implemented:
+- Added optional reverse geocode cache flow for visit centroids only (no per-point geocoding).
+- Added SQLite cache migration:
+- `migrations/0004_visit_place_cache.sql`
+- table: `visit_place_cache(provider, lat_key, lon_key, label, updated_at)`
+- Added store cache methods:
+- `GetVisitPlaceLabel(...)`
+- `UpsertVisitPlaceLabel(...)`
+- Added pluggable reverse-geocode resolver under `internal/visits`:
+- provider interface (`Name`, `ReverseGeocode`)
+- cache interface (`GetVisitPlaceLabel`, `UpsertVisitPlaceLabel`)
+- optional resolver (`Enabled`, `ResolveVisitLabel`, per-request provider budget)
+- Added lightweight Nominatim provider implementation (std-lib HTTP only, timeout + User-Agent support).
+- Wired optional resolver into server startup via config; disabled by default.
+- Extended `GET /api/v1/visits` response with optional `place_label`.
+- Visit list behavior now:
+- cache-first lookup for each returned visit centroid
+- provider called only on cache miss and only while per-request budget remains
+- no resolver errors fail the visit list response (best-effort enrichment)
+- Updated map UI popup to show place label when available.
+- Added tests for cache behavior:
+- resolver cache-hit skips provider
+- resolver miss stores label and subsequent lookup uses cache
+- disallowed provider mode returns no label without network call
+- provider error path remains contained
+- Added SQLite-backed cache upsert/read test.
+- Added API test ensuring label resolver budget is respected and labels are included when available.
+- Updated README with reverse geocode cache behavior and environment knobs.
+
+Architectural decisions:
+- Decision: Keep reverse geocoding optional and centered on `GET /api/v1/visits` output.
+  Reason: Avoids background/network churn and keeps compute/network overhead low on Raspberry Pi.
+- Decision: Cache by rounded centroid keys (`APP_REVERSE_GEOCODE_CACHE_DECIMALS`) in SQLite.
+  Reason: Simple deterministic keying reduces duplicate lookups while keeping storage/query cost low.
+- Decision: Bound provider calls per request (`APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST`).
+  Reason: Limits network usage spikes and keeps endpoint latency predictable.
+
+Files changed:
+- `migrations/0004_visit_place_cache.sql`
+- `internal/store/visit_place_cache.go`
+- `internal/visits/reverse_geocode_resolver.go`
+- `internal/visits/reverse_geocode_provider_nominatim.go`
+- `internal/visits/reverse_geocode_resolver_test.go`
+- `internal/config/config.go`
+- `internal/api/health.go`
+- `internal/api/visits.go`
+- `internal/api/visits_test.go`
+- `internal/store/visits_test.go`
+- `internal/api/ui.go`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/visits -count=1`
+- `go test ./internal/store -run 'TestVisit(Detection_|PlaceCache_)|TestListVisits_FilterByTimeRange' -count=1`
+- `go test ./internal/api -run 'Test(ListVisitsEndpoint|ListVisitsEndpoint_InvalidParams|ListVisitsEndpoint_WithVisitLabelResolver|GenerateVisitsEndpoint_)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Add optional lightweight cache invalidation/refresh policy (currently cache entries persist until overwritten).
+- Consider exposing provider/cache status counters in `/api/v1/status` if operational visibility is needed.
+- Continue flusher checkpoint-failure requeue hardening work.
+
+Known issues:
+- Reverse geocode labels depend on external provider availability/terms when enabled.
+- `gofmt -w` was blocked in this session by read-only filesystem policy for direct write commands (code compiles/tests pass).
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

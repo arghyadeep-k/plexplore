@@ -41,6 +41,15 @@ type Config struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+
+	// Reverse geocode cache (optional, visit-centroid only).
+	ReverseGeocodeEnabled              bool
+	ReverseGeocodeProvider             string
+	ReverseGeocodeNominatimURL         string
+	ReverseGeocodeUserAgent            string
+	ReverseGeocodeTimeout              time.Duration
+	ReverseGeocodeCacheDecimals        int
+	ReverseGeocodeMaxLookupsPerRequest int
 }
 
 func Load() Config {
@@ -64,6 +73,13 @@ func Load() Config {
 		ReadTimeout:             time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
 		WriteTimeout:            time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
 		IdleTimeout:             time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,
+		ReverseGeocodeEnabled:   getEnvBool("APP_REVERSE_GEOCODE_ENABLED", false),
+		ReverseGeocodeProvider:  strings.ToLower(getEnv("APP_REVERSE_GEOCODE_PROVIDER", "nominatim")),
+		ReverseGeocodeNominatimURL: getEnv("APP_REVERSE_GEOCODE_NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"),
+		ReverseGeocodeUserAgent:            getEnv("APP_REVERSE_GEOCODE_USER_AGENT", "plexplore/1.0 (+self-hosted)"),
+		ReverseGeocodeTimeout:              getEnvDuration("APP_REVERSE_GEOCODE_TIMEOUT", 2*time.Second),
+		ReverseGeocodeCacheDecimals:        getEnvInt("APP_REVERSE_GEOCODE_CACHE_DECIMALS", 4),
+		ReverseGeocodeMaxLookupsPerRequest: getEnvInt("APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST", 3),
 	}
 }
 
@@ -101,6 +117,21 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return value
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if raw == "" {
+		return fallback
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func getFsyncMode(key, fallback string) string {

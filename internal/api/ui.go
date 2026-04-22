@@ -541,6 +541,7 @@ const mapPageHTML = `<!doctype html>
         marker.bindPopup(
           "visit #" + v.id +
           "<br>device: " + escapeHTML(v.device_id || "") +
+          "<br>place: " + escapeHTML(v.place_label || "") +
           "<br>start: " + escapeHTML(v.start_at || "") +
           "<br>end: " + escapeHTML(v.end_at || "") +
           "<br>points: " + String(v.point_count || 0)

@@ -213,3 +213,38 @@ func TestListVisits_FilterByTimeRange(t *testing.T) {
 		t.Fatalf("expected visit start within range, got %v", out[0].StartAt)
 	}
 }
+
+func TestVisitPlaceCache_UpsertAndRead(t *testing.T) {
+	s := openStoreWithSchema(t)
+	ctx := context.Background()
+
+	label, ok, err := s.GetVisitPlaceLabel(ctx, "nominatim", "41.1000", "-87.1000")
+	if err != nil {
+		t.Fatalf("GetVisitPlaceLabel initial failed: %v", err)
+	}
+	if ok || label != "" {
+		t.Fatalf("expected empty initial cache, got ok=%v label=%q", ok, label)
+	}
+
+	if err := s.UpsertVisitPlaceLabel(ctx, "nominatim", "41.1000", "-87.1000", "Test Place"); err != nil {
+		t.Fatalf("UpsertVisitPlaceLabel failed: %v", err)
+	}
+	label, ok, err = s.GetVisitPlaceLabel(ctx, "nominatim", "41.1000", "-87.1000")
+	if err != nil {
+		t.Fatalf("GetVisitPlaceLabel after insert failed: %v", err)
+	}
+	if !ok || label != "Test Place" {
+		t.Fatalf("expected cached Test Place, got ok=%v label=%q", ok, label)
+	}
+
+	if err := s.UpsertVisitPlaceLabel(ctx, "nominatim", "41.1000", "-87.1000", "Updated Place"); err != nil {
+		t.Fatalf("UpsertVisitPlaceLabel update failed: %v", err)
+	}
+	label, ok, err = s.GetVisitPlaceLabel(ctx, "nominatim", "41.1000", "-87.1000")
+	if err != nil {
+		t.Fatalf("GetVisitPlaceLabel after update failed: %v", err)
+	}
+	if !ok || label != "Updated Place" {
+		t.Fatalf("expected cached Updated Place, got ok=%v label=%q", ok, label)
+	}
+}

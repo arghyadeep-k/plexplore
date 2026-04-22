@@ -54,6 +54,12 @@ type VisitStore interface {
 	ListVisits(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, limit int) ([]store.Visit, error)
 }
 
+type VisitLabelResolver interface {
+	Enabled() bool
+	MaxProviderLookupsPerRequest() int
+	ResolveVisitLabel(rctx context.Context, lat, lon float64, allowProvider bool) (string, bool, error)
+}
+
 type Dependencies struct {
 	DeviceStore DeviceStore
 	Spool       SpoolAppender
@@ -64,6 +70,7 @@ type Dependencies struct {
 	FlushTriggerBytes  int
 	PointStore         PointStore
 	VisitStore         VisitStore
+	VisitLabelResolver VisitLabelResolver
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
@@ -90,7 +97,7 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 		registerExportRoutes(mux, deps)
 	}
 	if deps.VisitStore != nil {
-		registerVisitRoutes(mux, deps.VisitStore)
+		registerVisitRoutes(mux, deps.VisitStore, deps.VisitLabelResolver)
 	}
 }
 

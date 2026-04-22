@@ -22,6 +22,27 @@ type fakeVisitStore struct {
 	list         []store.Visit
 }
 
+type fakeVisitLabelResolver struct {
+	enabled       bool
+	maxLookups    int
+	calls         int
+	providerCalls int
+	label         string
+}
+
+func (f *fakeVisitLabelResolver) Enabled() bool { return f.enabled }
+
+func (f *fakeVisitLabelResolver) MaxProviderLookupsPerRequest() int { return f.maxLookups }
+
+func (f *fakeVisitLabelResolver) ResolveVisitLabel(_ context.Context, _, _ float64, allowProvider bool) (string, bool, error) {
+	f.calls++
+	if !allowProvider {
+		return "", false, nil
+	}
+	f.providerCalls++
+	return f.label, true, nil
+}
+
 func (f *fakeVisitStore) RebuildVisitsForDeviceRange(_ context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error) {
 	f.lastDeviceID = deviceID
 	f.lastFromUTC = fromUTC
@@ -143,5 +164,68 @@ func TestListVisitsEndpoint_InvalidParams(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for %q, got %d body=%s", path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestListVisitsEndpoint_WithVisitLabelResolver(t *testing.T) {
+	vs := &fakeVisitStore{
+		list: []store.Visit{
+			{
+				ID:          1,
+				DeviceID:    "phone-main",
+				StartAt:     time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC),
+				EndAt:       time.Date(2026, 4, 22, 10, 20, 0, 0, time.UTC),
+				CentroidLat: 41.1,
+				CentroidLon: -87.1,
+				PointCount:  5,
+			},
+			{
+				ID:          2,
+				DeviceID:    "phone-main",
+				StartAt:     time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC),
+				EndAt:       time.Date(2026, 4, 22, 12, 30, 0, 0, time.UTC),
+				CentroidLat: 41.2,
+				CentroidLon: -87.2,
+				PointCount:  6,
+			},
+		},
+	}
+	resolver := &fakeVisitLabelResolver{
+		enabled:    true,
+		maxLookups: 1,
+		label:      "Cached Place",
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		VisitStore:         vs,
+		VisitLabelResolver: resolver,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/visits?device_id=phone-main&limit=10", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if resolver.calls != 2 {
+		t.Fatalf("expected resolver called for each visit, got %d", resolver.calls)
+	}
+	if resolver.providerCalls != 1 {
+		t.Fatalf("expected provider budget of 1 call, got %d", resolver.providerCalls)
+	}
+
+	var resp listVisitsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if len(resp.Visits) != 2 {
+		t.Fatalf("expected 2 visits, got %d", len(resp.Visits))
+	}
+	if resp.Visits[0].PlaceLabel != "Cached Place" {
+		t.Fatalf("expected first visit place label, got %q", resp.Visits[0].PlaceLabel)
+	}
+	if resp.Visits[1].PlaceLabel != "" {
+		t.Fatalf("expected second visit without label after budget exhaustion, got %q", resp.Visits[1].PlaceLabel)
 	}
 }

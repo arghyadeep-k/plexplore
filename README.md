@@ -248,6 +248,12 @@ Current persistence model stores visits with:
 - `centroid_lon`
 - `point_count`
 
+Optional place-label cache (visit centroids only):
+- `GET /api/v1/visits` can include `place_label` when reverse geocode cache is enabled
+- lookup is performed only for visit centroids (not for every point)
+- cached labels are persisted locally in SQLite (`visit_place_cache`)
+- provider calls are bounded per request and disabled by default
+
 Implementation is intentionally simple (no clustering libraries) for Raspberry
 Pi-friendly resource usage.
 
@@ -391,7 +397,7 @@ Map page notes:
 - fetches track points from `GET /api/v1/points`
 - renders an ordered track polyline
 - renders lightweight point markers for smaller result sets
-- renders lightweight visit centroid markers from `/api/v1/visits` with popup details
+- renders lightweight visit centroid markers from `/api/v1/visits` with popup details (including `place_label` when available)
 - includes a small visits summary table (start, end, duration, device) below the map
 - supports filtering by device and date range (`from`/`to` day inputs)
 - defaults to a recent 7-day range when no date filters are set
@@ -516,6 +522,13 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_READ_TIMEOUT_SECONDS` (default: `5`): HTTP read timeout in seconds.
 - `APP_WRITE_TIMEOUT_SECONDS` (default: `10`): HTTP write timeout in seconds.
 - `APP_IDLE_TIMEOUT_SECONDS` (default: `30`): HTTP idle timeout in seconds.
+- `APP_REVERSE_GEOCODE_ENABLED` (default: `false`): enable optional visit-centroid place-label enrichment.
+- `APP_REVERSE_GEOCODE_PROVIDER` (default: `nominatim`): reverse geocode provider id.
+- `APP_REVERSE_GEOCODE_NOMINATIM_URL` (default: `https://nominatim.openstreetmap.org/reverse`): Nominatim reverse endpoint.
+- `APP_REVERSE_GEOCODE_USER_AGENT` (default: `plexplore/1.0 (+self-hosted)`): User-Agent sent to provider.
+- `APP_REVERSE_GEOCODE_TIMEOUT` (default: `2s`): provider HTTP timeout.
+- `APP_REVERSE_GEOCODE_CACHE_DECIMALS` (default: `4`): centroid coordinate rounding for cache keys (higher precision = more cache entries).
+- `APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST` (default: `3`): hard cap on provider calls during one `GET /api/v1/visits`.
 
 Flush trigger policy:
 - periodic flush loop remains active (`APP_FLUSH_INTERVAL`).
@@ -524,6 +537,12 @@ Flush trigger policy:
 - request handlers still do not write directly to SQLite.
 - near-duplicates suppressed by RAM dedupe are retained as lightweight checkpoint-only markers so checkpoint can still advance through their spool sequence during normal runtime.
 - after successful SQLite commit and checkpoint advancement, service best-effort compacts fully committed spool segments.
+
+Reverse geocode cache policy:
+- disabled by default; enable only if you want place labels in visits output.
+- applies to visit centroids only (`GET /api/v1/visits`), never to every raw point.
+- local SQLite cache is checked first; provider is used only on cache miss.
+- provider calls are bounded by `APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST` to limit network usage on Raspberry Pi deployments.
 
 ## Database Migrations
 

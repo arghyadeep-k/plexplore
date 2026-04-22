@@ -1,11 +1,11 @@
 # Next Steps
 
 ## Current milestone
-Stabilize visits UX and verification after completing visits API/map Tasks 1-3
+Stabilize optional reverse-geocode cache behavior for visit centroids
 
 ## Next 3 tasks
-1. Add an integration-style API test for `GET /api/v1/visits` against real SQLite-backed fixtures (device + from/to + limit)
-2. Add a lightweight map UI test assertion for visits summary rendering fallback text path (`No visits for current filter`) where practical
+1. Add integration-style `GET /api/v1/visits` test with real SQLite cache entries (`place_label` returned for cached centroids)
+2. Add optional cache refresh/invalidation strategy (time-based or manual) while keeping default low-overhead behavior
 3. Continue flusher durability hardening for checkpoint-failure requeue behavior without redesigning pipeline
 
 ## Commands
@@ -20,7 +20,10 @@ Stabilize visits UX and verification after completing visits API/map Tasks 1-3
 - `go test ./internal/store -run 'TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder' -count=1`
 - `go test ./internal/store -run 'TestVisitDetection_' -count=1`
 - `go test ./internal/store -run 'TestListVisits_FilterByTimeRange' -count=1`
+- `go test ./internal/store -run 'TestVisitPlaceCache_UpsertAndRead' -count=1`
+- `go test ./internal/visits -count=1`
 - `go test ./internal/api -run 'TestIngestOwnTracks_(NoPressure_DoesNotTriggerFlush|PointPressure_TriggersFlush|BytePressure_TriggersFlush)' -count=1`
+- `go test ./internal/api -run 'TestListVisitsEndpoint_WithVisitLabelResolver' -count=1`
 - `go test ./internal/tasks -run TestRecoverFromSpool -count=1`
 - `go test ./internal/tasks -run TestIntegration -count=1`
 - `docker build -t plexplore:dev .`
@@ -29,6 +32,7 @@ Stabilize visits UX and verification after completing visits API/map Tasks 1-3
 - `docker compose down`
 - `make migrate`
 - `sqlite3 ./data/plexplore.db ".schema visits"`
+- `sqlite3 ./data/plexplore.db ".schema visit_place_cache"`
 - `go run ./cmd/server`
 - `curl -sS http://127.0.0.1:8080/health`
 - `curl -sS http://127.0.0.1:8080/status`
@@ -64,6 +68,8 @@ Recent points debug endpoint is available at `GET /api/v1/points/recent` with op
 Point history endpoint is available at `GET /api/v1/points` with optional `from`, `to`, `device_id`, and `limit` (ascending timestamp order).
 Visits are generated on-demand through `POST /api/v1/visits/generate` with bounded device/date windows (default recent 14 days).
 `GET /api/v1/visits` now supports optional `device_id`, `from`, `to`, and `limit` for compact list/filtering.
+Optional reverse geocode label enrichment is available for visit centroids on `GET /api/v1/visits` when `APP_REVERSE_GEOCODE_ENABLED=true`.
+Reverse geocode cache persists in SQLite table `visit_place_cache`; provider calls are capped per request by `APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST`.
 GeoJSON export is available at `GET /api/v1/exports/geojson` with optional `from`, `to`, and `device_id`.
 GPX export is available at `GET /api/v1/exports/gpx` with optional `from`, `to`, and `device_id`.
 Operational status endpoint is `GET /api/v1/status` (lightweight JSON, no Prometheus).
@@ -82,6 +88,7 @@ Duplicate replay-pending lag issue is fixed: immediate duplicates now advance ch
 README now documents clean shutdown vs forced kill vs crash/power-loss behavior and a manual shutdown verification procedure.
 README now also documents startup recovery flow (checkpoint read -> replay `seq > checkpoint` -> flush -> checkpoint advance before HTTP listen).
 Run `make migrate` to ensure latest migrations (`0002_devices_updated_at.sql`, `0003_visits.sql`) are applied.
+Run `make migrate` to ensure latest migrations include `0004_visit_place_cache.sql`.
 README now includes practical OwnTracks/Overland setup and troubleshooting for `400/401/500` ingest responses.
 Minimal web UI now also shows recent points preview from `/api/v1/points/recent?limit=10`.
 Raspberry Pi deployment templates now exist under `deploy/systemd/` with installer `scripts/install_systemd.sh`.
