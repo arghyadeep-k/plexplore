@@ -28,6 +28,11 @@ func registerIngestRoutes(mux *http.ServeMux, deps Dependencies) {
 
 func ownTracksIngestHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if deps.IsDraining != nil && deps.IsDraining() {
+			writeJSONError(w, http.StatusServiceUnavailable, "service is shutting down")
+			return
+		}
+
 		raw, err := readBoundedBody(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -61,6 +66,11 @@ func ownTracksIngestHandler(deps Dependencies) http.HandlerFunc {
 
 func overlandIngestHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if deps.IsDraining != nil && deps.IsDraining() {
+			writeJSONError(w, http.StatusServiceUnavailable, "service is shutting down")
+			return
+		}
+
 		raw, err := readBoundedBody(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -104,6 +114,8 @@ func appendAndEnqueue(deps Dependencies, points []ingest.CanonicalPoint, source 
 		return ingestSuccessResponse{}, err
 	}
 
+	maybeTriggerPressureFlush(deps)
+
 	maxSeq := uint64(0)
 	for _, record := range records {
 		if record.Seq > maxSeq {
@@ -119,6 +131,20 @@ func appendAndEnqueue(deps Dependencies, points []ingest.CanonicalPoint, source 
 		Enqueued: len(records),
 		MaxSeq:   maxSeq,
 	}, nil
+}
+
+func maybeTriggerPressureFlush(deps Dependencies) {
+	if deps.Flusher == nil || deps.Buffer == nil {
+		return
+	}
+	stats := deps.Buffer.Stats()
+	if deps.FlushTriggerPoints > 0 && stats.TotalBufferedPoints >= deps.FlushTriggerPoints {
+		deps.Flusher.TriggerFlush()
+		return
+	}
+	if deps.FlushTriggerBytes > 0 && stats.TotalBufferedBytes >= deps.FlushTriggerBytes {
+		deps.Flusher.TriggerFlush()
+	}
 }
 
 func normalizeForAuthenticatedDevice(points []ingest.CanonicalPoint, device store.Device) {

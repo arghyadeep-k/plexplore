@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"plexplore/internal/buffer"
+	"plexplore/internal/flusher"
 	"plexplore/internal/ingest"
 	"plexplore/internal/spool"
 	"plexplore/internal/store"
@@ -45,7 +46,8 @@ func (f *fakeSpoolAppender) SegmentCount() (int, error) {
 }
 
 type fakeRecordBuffer struct {
-	enqueued []ingest.SpoolRecord
+	enqueued              []ingest.SpoolRecord
+	bytesPerEnqueuedPoint int
 }
 
 func (f *fakeRecordBuffer) Enqueue(records []ingest.SpoolRecord) error {
@@ -54,9 +56,26 @@ func (f *fakeRecordBuffer) Enqueue(records []ingest.SpoolRecord) error {
 }
 
 func (f *fakeRecordBuffer) Stats() buffer.Stats {
+	totalBytes := len(f.enqueued)
+	if f.bytesPerEnqueuedPoint > 0 {
+		totalBytes = len(f.enqueued) * f.bytesPerEnqueuedPoint
+	}
 	return buffer.Stats{
 		TotalBufferedPoints: len(f.enqueued),
+		TotalBufferedBytes:  totalBytes,
 	}
+}
+
+type fakeFlushTrigger struct {
+	triggerCalls int
+}
+
+func (f *fakeFlushTrigger) TriggerFlush() {
+	f.triggerCalls++
+}
+
+func (f *fakeFlushTrigger) LastFlushResult() (flusher.LastFlushResult, bool) {
+	return flusher.LastFlushResult{}, false
 }
 
 func TestIngestOwnTracks_ValidRequest(t *testing.T) {
@@ -183,5 +202,143 @@ func TestIngestOwnTracks_BadAPIKey(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIngestOwnTracks_RejectedDuringShutdownDrain(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 1, Name: "phone-main", SourceType: "owntracks", APIKey: "k1"},
+		},
+	}
+	sp := &fakeSpoolAppender{}
+	buf := &fakeRecordBuffer{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		Spool:       sp,
+		Buffer:      buf,
+		IsDraining: func() bool {
+			return true
+		},
+	})
+
+	body := []byte(`{"_type":"location","lat":37.42,"lon":-122.08,"tst":1713744000}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/owntracks", bytes.NewReader(body))
+	req.Header.Set("X-API-Key", "k1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 while draining, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(sp.points) != 0 {
+		t.Fatalf("expected no spool append while draining, got %d points", len(sp.points))
+	}
+	if got := len(buf.enqueued); got != 0 {
+		t.Fatalf("expected no buffer enqueue while draining, got %d", got)
+	}
+}
+
+func TestIngestOwnTracks_NoPressure_DoesNotTriggerFlush(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 1, Name: "phone-main", SourceType: "owntracks", APIKey: "k1"},
+		},
+	}
+	sp := &fakeSpoolAppender{}
+	buf := &fakeRecordBuffer{bytesPerEnqueuedPoint: 100}
+	flush := &fakeFlushTrigger{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore:        ds,
+		Spool:              sp,
+		Buffer:             buf,
+		Flusher:            flush,
+		FlushTriggerPoints: 10,
+		FlushTriggerBytes:  1000,
+	})
+
+	body := []byte(`{"_type":"location","lat":37.42,"lon":-122.08,"tst":1713744000}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/owntracks", bytes.NewReader(body))
+	req.Header.Set("X-API-Key", "k1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if flush.triggerCalls != 0 {
+		t.Fatalf("expected no flush trigger, got %d", flush.triggerCalls)
+	}
+}
+
+func TestIngestOwnTracks_PointPressure_TriggersFlush(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 1, Name: "phone-main", SourceType: "owntracks", APIKey: "k1"},
+		},
+	}
+	sp := &fakeSpoolAppender{}
+	buf := &fakeRecordBuffer{bytesPerEnqueuedPoint: 10}
+	flush := &fakeFlushTrigger{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore:        ds,
+		Spool:              sp,
+		Buffer:             buf,
+		Flusher:            flush,
+		FlushTriggerPoints: 1,
+		FlushTriggerBytes:  0,
+	})
+
+	body := []byte(`{"_type":"location","lat":37.42,"lon":-122.08,"tst":1713744000}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/owntracks", bytes.NewReader(body))
+	req.Header.Set("X-API-Key", "k1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if flush.triggerCalls != 1 {
+		t.Fatalf("expected one flush trigger from point pressure, got %d", flush.triggerCalls)
+	}
+}
+
+func TestIngestOwnTracks_BytePressure_TriggersFlush(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 1, Name: "phone-main", SourceType: "owntracks", APIKey: "k1"},
+		},
+	}
+	sp := &fakeSpoolAppender{}
+	buf := &fakeRecordBuffer{bytesPerEnqueuedPoint: 100}
+	flush := &fakeFlushTrigger{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore:        ds,
+		Spool:              sp,
+		Buffer:             buf,
+		Flusher:            flush,
+		FlushTriggerPoints: 0,
+		FlushTriggerBytes:  64,
+	})
+
+	body := []byte(`{"_type":"location","lat":37.42,"lon":-122.08,"tst":1713744000}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/owntracks", bytes.NewReader(body))
+	req.Header.Set("X-API-Key", "k1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if flush.triggerCalls != 1 {
+		t.Fatalf("expected one flush trigger from byte pressure, got %d", flush.triggerCalls)
 	}
 }

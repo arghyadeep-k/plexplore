@@ -110,7 +110,7 @@ func (m *FileSpoolManager) closeActiveLocked(syncBeforeClose bool) error {
 		return nil
 	}
 
-	if syncBeforeClose && m.fsyncMode != FSyncModeLowWear && m.bytesSinceSync > 0 {
+	if syncBeforeClose && m.bytesSinceSync > 0 {
 		if err := m.activeFile.Sync(); err != nil {
 			return fmt.Errorf("sync before close spool segment: %w", err)
 		}

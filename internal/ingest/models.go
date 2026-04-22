@@ -30,6 +30,9 @@ type SpoolRecord struct {
 	DeviceID   string
 	ReceivedAt time.Time
 	Point      CanonicalPoint
+	// CheckpointOnly marks records that should advance checkpoint sequencing
+	// but skip durable SQLite insert (for dedupe-suppressed duplicates).
+	CheckpointOnly bool `json:"checkpoint_only,omitempty"`
 }
 
 // BufferStats tracks lightweight counters for the RAM batch buffer.

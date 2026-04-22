@@ -1,0 +1,22 @@
+[Unit]
+Description=Plexplore Tracker Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=plexplore
+Group=plexplore
+WorkingDirectory=/opt/plexplore
+EnvironmentFile=/etc/plexplore/plexplore.env
+ExecStart=/opt/plexplore/plexplore-server
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/plexplore
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

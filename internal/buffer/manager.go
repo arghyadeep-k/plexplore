@@ -17,9 +17,9 @@ var (
 )
 
 const (
-	DefaultDedupeMaxTimeDelta  = 2 * time.Second
-	DefaultDedupeMaxDistanceM  = 10.0
-	earthRadiusMeters          = 6371000.0
+	DefaultDedupeMaxTimeDelta = 2 * time.Second
+	DefaultDedupeMaxDistanceM = 10.0
+	earthRadiusMeters         = 6371000.0
 )
 
 // Stats contains lightweight runtime buffer metrics.
@@ -251,6 +251,11 @@ func (m *Manager) filterNearDuplicates(records []ingest.SpoolRecord) ([]ingest.S
 	out := make([]ingest.SpoolRecord, 0, len(records))
 	for _, record := range records {
 		if isNearDuplicate(record, candidateState, m.dedupeTime, m.dedupeDistM) {
+			// Keep sequence progression while avoiding duplicate DB work.
+			marker := record
+			marker.CheckpointOnly = true
+			marker.Point.RawPayload = nil
+			out = append(out, marker)
 			continue
 		}
 		state := dedupeState{

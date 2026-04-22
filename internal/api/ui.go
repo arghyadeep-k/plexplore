@@ -134,6 +134,18 @@ const statusPageHTML = `<!doctype html>
         </tbody>
       </table>
     </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="label">Recent Points</div>
+      <table>
+        <thead>
+          <tr><th>Seq</th><th>Device</th><th>Time (UTC)</th><th>Lat</th><th>Lon</th></tr>
+        </thead>
+        <tbody id="points_body">
+          <tr><td colspan="5" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
@@ -168,6 +180,31 @@ const statusPageHTML = `<!doctype html>
       const body = document.getElementById("devices_body");
       if (!body) return;
       body.innerHTML = "<tr><td colspan='4' class='muted'>Unavailable: " + escapeHTML(message) + "</td></tr>";
+    }
+
+    function renderPoints(points) {
+      const body = document.getElementById("points_body");
+      if (!body) return;
+      if (!points || points.length === 0) {
+        body.innerHTML = "<tr><td colspan='5' class='muted'>No points</td></tr>";
+        return;
+      }
+      body.innerHTML = points.map((p) =>
+        "<tr><td>" + p.seq + "</td><td>" + escapeHTML(p.device_id || "") + "</td><td>" +
+        escapeHTML(p.timestamp_utc || "") + "</td><td>" + formatCoord(p.lat) + "</td><td>" +
+        formatCoord(p.lon) + "</td></tr>"
+      ).join("");
+    }
+
+    function renderPointsUnavailable(message) {
+      const body = document.getElementById("points_body");
+      if (!body) return;
+      body.innerHTML = "<tr><td colspan='5' class='muted'>Unavailable: " + escapeHTML(message) + "</td></tr>";
+    }
+
+    function formatCoord(value) {
+      if (typeof value !== "number" || !isFinite(value)) return "";
+      return value.toFixed(5);
     }
 
     function escapeHTML(value) {
@@ -211,7 +248,16 @@ const statusPageHTML = `<!doctype html>
           renderDevicesUnavailable(devicesErr.message);
         }
 
-        updated.textContent = "Updated: " + new Date().toLocaleString() + deviceWarning;
+        let pointsWarning = "";
+        try {
+          const pointsResp = await getJSON("/api/v1/points/recent?limit=10");
+          renderPoints((pointsResp && pointsResp.points) || []);
+        } catch (pointsErr) {
+          pointsWarning = " | points: " + pointsErr.message;
+          renderPointsUnavailable(pointsErr.message);
+        }
+
+        updated.textContent = "Updated: " + new Date().toLocaleString() + deviceWarning + pointsWarning;
       } catch (err) {
         setText("health", "ERROR", "bad");
         if (updated) updated.textContent = "Update failed: " + err.message;

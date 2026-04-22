@@ -31,6 +31,12 @@ type Config struct {
 	FlushInterval time.Duration
 	// FlushBatchSize is the max number of points persisted per flush batch.
 	FlushBatchSize int
+	// FlushTriggerPoints triggers a best-effort flush when buffered points
+	// reaches or exceeds this threshold.
+	FlushTriggerPoints int
+	// FlushTriggerBytes triggers a best-effort flush when buffered bytes
+	// reaches or exceeds this threshold.
+	FlushTriggerBytes int
 
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
@@ -38,21 +44,26 @@ type Config struct {
 }
 
 func Load() Config {
+	bufferMaxPoints := getEnvInt("APP_BUFFER_MAX_POINTS", 256)
+	bufferMaxBytes := getEnvInt("APP_BUFFER_MAX_BYTES", 256*1024)
+
 	return Config{
-		HTTPListenAddr:         getEnv("APP_HTTP_LISTEN_ADDR", "0.0.0.0:8080"),
-		SQLitePath:             getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
-		SpoolDir:               getEnv("APP_SPOOL_DIR", "./data/spool"),
-		SpoolSegmentMaxBytes:   getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
-		SpoolFSyncMode:         getFsyncMode("APP_SPOOL_FSYNC_MODE", "balanced"),
-		SpoolFSyncInterval:     getEnvDuration("APP_SPOOL_FSYNC_INTERVAL", 2*time.Second),
+		HTTPListenAddr:          getEnv("APP_HTTP_LISTEN_ADDR", "0.0.0.0:8080"),
+		SQLitePath:              getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
+		SpoolDir:                getEnv("APP_SPOOL_DIR", "./data/spool"),
+		SpoolSegmentMaxBytes:    getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
+		SpoolFSyncMode:          getFsyncMode("APP_SPOOL_FSYNC_MODE", "balanced"),
+		SpoolFSyncInterval:      getEnvDuration("APP_SPOOL_FSYNC_INTERVAL", 2*time.Second),
 		SpoolFSyncByteThreshold: getEnvInt("APP_SPOOL_FSYNC_BYTE_THRESHOLD", 64*1024),
-		BufferMaxPoints:        getEnvInt("APP_BUFFER_MAX_POINTS", 256),
-		BufferMaxBytes:         getEnvInt("APP_BUFFER_MAX_BYTES", 256*1024),
-		FlushInterval:          getEnvDuration("APP_FLUSH_INTERVAL", 10*time.Second),
-		FlushBatchSize:         getEnvInt("APP_FLUSH_BATCH_SIZE", 128),
-		ReadTimeout:  time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
-		WriteTimeout: time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
-		IdleTimeout:  time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,
+		BufferMaxPoints:         bufferMaxPoints,
+		BufferMaxBytes:          bufferMaxBytes,
+		FlushInterval:           getEnvDuration("APP_FLUSH_INTERVAL", 10*time.Second),
+		FlushBatchSize:          getEnvInt("APP_FLUSH_BATCH_SIZE", 128),
+		FlushTriggerPoints:      getEnvInt("APP_FLUSH_TRIGGER_POINTS", defaultFlushTriggerThreshold(bufferMaxPoints)),
+		FlushTriggerBytes:       getEnvInt("APP_FLUSH_TRIGGER_BYTES", defaultFlushTriggerThreshold(bufferMaxBytes)),
+		ReadTimeout:             time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
+		WriteTimeout:            time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
+		IdleTimeout:             time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,
 	}
 }
 
@@ -103,4 +114,12 @@ func getFsyncMode(key, fallback string) string {
 	default:
 		return fallback
 	}
+}
+
+func defaultFlushTriggerThreshold(maxValue int) int {
+	threshold := (maxValue * 3) / 4
+	if threshold <= 0 {
+		return 1
+	}
+	return threshold
 }

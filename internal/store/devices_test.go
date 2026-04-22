@@ -32,6 +32,9 @@ func TestSQLiteStore_CreateAndLookupDeviceByAPIKey(t *testing.T) {
 	if loaded.Name != "phone-main" {
 		t.Fatalf("expected device name phone-main, got %q", loaded.Name)
 	}
+	if loaded.CreatedAt.IsZero() || loaded.UpdatedAt.IsZero() {
+		t.Fatalf("expected timestamps on loaded device, got %+v", loaded)
+	}
 }
 
 func TestSQLiteStore_ListDevices(t *testing.T) {
@@ -70,5 +73,42 @@ func TestSQLiteStore_GetDeviceByAPIKey_NotFound(t *testing.T) {
 	_, err := s.GetDeviceByAPIKey(context.Background(), "missing")
 	if !errors.Is(err, ErrDeviceNotFound) {
 		t.Fatalf("expected ErrDeviceNotFound, got %v", err)
+	}
+}
+
+func TestSQLiteStore_GetDeviceByID_AndRotateAPIKey(t *testing.T) {
+	s := openStoreWithSchema(t)
+	ctx := context.Background()
+
+	created, err := s.CreateDevice(ctx, CreateDeviceParams{
+		Name:       "d1",
+		SourceType: "owntracks",
+		APIKey:     "old-key",
+	})
+	if err != nil {
+		t.Fatalf("CreateDevice failed: %v", err)
+	}
+
+	loaded, err := s.GetDeviceByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetDeviceByID failed: %v", err)
+	}
+	if loaded.ID != created.ID {
+		t.Fatalf("expected loaded id %d, got %d", created.ID, loaded.ID)
+	}
+
+	rotated, err := s.RotateDeviceAPIKey(ctx, created.ID, "new-key")
+	if err != nil {
+		t.Fatalf("RotateDeviceAPIKey failed: %v", err)
+	}
+	if rotated.APIKey != "new-key" {
+		t.Fatalf("expected new-key after rotation, got %q", rotated.APIKey)
+	}
+
+	if _, err := s.GetDeviceByAPIKey(ctx, "old-key"); !errors.Is(err, ErrDeviceNotFound) {
+		t.Fatalf("expected old key lookup to fail, got %v", err)
+	}
+	if _, err := s.GetDeviceByAPIKey(ctx, "new-key"); err != nil {
+		t.Fatalf("expected new key lookup to succeed, got %v", err)
 	}
 }

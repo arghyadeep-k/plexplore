@@ -1,10 +1,13 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,13 +22,33 @@ func loadMigrationSQL(t *testing.T) string {
 		t.Fatal("failed to resolve caller path")
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
-	sqlPath := filepath.Join(root, "migrations", "0001_init_schema.sql")
-
-	data, err := os.ReadFile(sqlPath)
+	migrationsDir := filepath.Join(root, "migrations")
+	entries, err := os.ReadDir(migrationsDir)
 	if err != nil {
-		t.Fatalf("read migration SQL %q: %v", sqlPath, err)
+		t.Fatalf("read migrations dir %q: %v", migrationsDir, err)
 	}
-	return string(data)
+
+	sqlFiles := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(entry.Name()), ".sql") {
+			sqlFiles = append(sqlFiles, filepath.Join(migrationsDir, entry.Name()))
+		}
+	}
+	slices.Sort(sqlFiles)
+
+	var builder strings.Builder
+	for _, sqlFile := range sqlFiles {
+		data, readErr := os.ReadFile(sqlFile)
+		if readErr != nil {
+			t.Fatalf("read migration SQL %q: %v", sqlFile, readErr)
+		}
+		builder.Write(data)
+		builder.WriteString("\n")
+	}
+	return builder.String()
 }
 
 func openStoreWithSchema(t *testing.T) *SQLiteStore {
@@ -154,9 +177,9 @@ func TestSQLiteStore_InsertSpoolBatch_PartialDuplicates(t *testing.T) {
 	}
 
 	mixed := []ingest.SpoolRecord{
-		testSpoolRecord(2, "d1", "hash-p2", base.Add(time.Second)),          // duplicate
-		testSpoolRecord(3, "d1", "hash-p3", base.Add(2*time.Second)),        // new
-		testSpoolRecord(4, "d1", "hash-p4", base.Add(3*time.Second)),        // new
+		testSpoolRecord(2, "d1", "hash-p2", base.Add(time.Second)),   // duplicate
+		testSpoolRecord(3, "d1", "hash-p3", base.Add(2*time.Second)), // new
+		testSpoolRecord(4, "d1", "hash-p4", base.Add(3*time.Second)), // new
 	}
 	maxSeq, err := store.InsertSpoolBatch(mixed)
 	if err != nil {
@@ -204,5 +227,74 @@ func TestSQLiteStore_InsertSpoolBatch_MultipleDevices(t *testing.T) {
 		if got != want {
 			t.Fatalf("device %s: expected last_seq_received %d, got %d", device, want, got)
 		}
+	}
+}
+
+func TestSQLiteStore_ListRecentPoints(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+
+	records := []ingest.SpoolRecord{
+		testSpoolRecord(1, "d1", "hash-rp-1", base),
+		testSpoolRecord(2, "d1", "hash-rp-2", base.Add(30*time.Second)),
+		testSpoolRecord(3, "d2", "hash-rp-3", base.Add(60*time.Second)),
+	}
+	if _, err := s.InsertSpoolBatch(records); err != nil {
+		t.Fatalf("InsertSpoolBatch failed: %v", err)
+	}
+
+	all, err := s.ListRecentPoints(context.Background(), "", 2)
+	if err != nil {
+		t.Fatalf("ListRecentPoints all failed: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 recent points, got %d", len(all))
+	}
+	if all[0].Seq != 3 || all[1].Seq != 2 {
+		t.Fatalf("unexpected recent ordering: %+v", all)
+	}
+
+	filtered, err := s.ListRecentPoints(context.Background(), "d1", 10)
+	if err != nil {
+		t.Fatalf("ListRecentPoints filtered failed: %v", err)
+	}
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 points for d1, got %d", len(filtered))
+	}
+	for _, p := range filtered {
+		if p.DeviceID != "d1" {
+			t.Fatalf("expected only device d1 points, got %+v", filtered)
+		}
+	}
+}
+
+func TestSQLiteStore_ListPointsForExport_WithFilters(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+
+	records := []ingest.SpoolRecord{
+		testSpoolRecord(1, "d1", "hash-exp-1", base),
+		testSpoolRecord(2, "d1", "hash-exp-2", base.Add(30*time.Minute)),
+		testSpoolRecord(3, "d2", "hash-exp-3", base.Add(60*time.Minute)),
+	}
+	if _, err := s.InsertSpoolBatch(records); err != nil {
+		t.Fatalf("InsertSpoolBatch failed: %v", err)
+	}
+
+	from := base.Add(10 * time.Minute)
+	to := base.Add(45 * time.Minute)
+	points, err := s.ListPointsForExport(context.Background(), ExportPointFilter{
+		DeviceID: "d1",
+		FromUTC:  &from,
+		ToUTC:    &to,
+	})
+	if err != nil {
+		t.Fatalf("ListPointsForExport failed: %v", err)
+	}
+	if len(points) != 1 {
+		t.Fatalf("expected 1 filtered export point, got %d", len(points))
+	}
+	if points[0].Seq != 2 || points[0].DeviceID != "d1" {
+		t.Fatalf("unexpected filtered export point: %+v", points[0])
 	}
 }

@@ -95,6 +95,7 @@ ON CONFLICT(raw_point_id) DO NOTHING;
 UPDATE devices
 SET
     last_seen_at = ?,
+    updated_at = ?,
     last_seq_received = CASE
         WHEN last_seq_received < ? THEN ?
         ELSE last_seq_received
@@ -183,7 +184,7 @@ WHERE id = ?;
 
 	for deviceID, seq := range deviceLastSeq {
 		seenAt := deviceLastSeen[deviceID].UTC().Format(time.RFC3339Nano)
-		if _, err := deviceUpdateStmt.Exec(seenAt, seq, seq, deviceID); err != nil {
+		if _, err := deviceUpdateStmt.Exec(seenAt, seenAt, seq, seq, deviceID); err != nil {
 			return 0, fmt.Errorf("update device state id=%d: %w", deviceID, err)
 		}
 	}
@@ -208,11 +209,12 @@ ON CONFLICT(id) DO NOTHING;
 
 func ensureDevice(tx *sql.Tx, userID int64, deviceName, sourceType string) (int64, error) {
 	apiKey := "auto:" + deviceName
+	nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.Exec(`
-INSERT INTO devices(user_id, name, source_type, api_key, last_seq_received)
-VALUES (?, ?, ?, ?, 0)
+INSERT INTO devices(user_id, name, source_type, api_key, last_seq_received, updated_at)
+VALUES (?, ?, ?, ?, 0, ?)
 ON CONFLICT(api_key) DO NOTHING;
-`, userID, deviceName, sourceType, apiKey); err != nil {
+`, userID, deviceName, sourceType, apiKey, nowUTC); err != nil {
 		return 0, fmt.Errorf("ensure device %q: %w", deviceName, err)
 	}
 

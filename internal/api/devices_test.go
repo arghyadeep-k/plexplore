@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"plexplore/internal/store"
 )
@@ -26,6 +27,8 @@ func (f *fakeDeviceStore) CreateDevice(_ context.Context, params store.CreateDev
 		Name:       params.Name,
 		SourceType: params.SourceType,
 		APIKey:     params.APIKey,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
 	}
 	if d.UserID == 0 {
 		d.UserID = 1
@@ -40,6 +43,15 @@ func (f *fakeDeviceStore) ListDevices(_ context.Context) ([]store.Device, error)
 	return out, nil
 }
 
+func (f *fakeDeviceStore) GetDeviceByID(_ context.Context, id int64) (store.Device, error) {
+	for _, d := range f.devices {
+		if d.ID == id {
+			return d, nil
+		}
+	}
+	return store.Device{}, store.ErrDeviceNotFound
+}
+
 func (f *fakeDeviceStore) GetDeviceByAPIKey(_ context.Context, apiKey string) (store.Device, error) {
 	if f.lookupError != nil {
 		return store.Device{}, f.lookupError
@@ -52,7 +64,18 @@ func (f *fakeDeviceStore) GetDeviceByAPIKey(_ context.Context, apiKey string) (s
 	return store.Device{}, store.ErrDeviceNotFound
 }
 
-func TestDevicesAPI_CreateAndList(t *testing.T) {
+func (f *fakeDeviceStore) RotateDeviceAPIKey(_ context.Context, id int64, newAPIKey string) (store.Device, error) {
+	for i := range f.devices {
+		if f.devices[i].ID == id {
+			f.devices[i].APIKey = newAPIKey
+			f.devices[i].UpdatedAt = time.Now().UTC()
+			return f.devices[i], nil
+		}
+	}
+	return store.Device{}, store.ErrDeviceNotFound
+}
+
+func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
 	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
@@ -65,6 +88,19 @@ func TestDevicesAPI_CreateAndList(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created deviceSecretResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create response failed: %v", err)
+	}
+	if created.APIKey != "abc123" {
+		t.Fatalf("expected full api key in create response, got %q", created.APIKey)
+	}
+	if created.APIKeyPreview == "" {
+		t.Fatalf("expected api key preview in create response, got %+v", created)
+	}
+	if created.CreatedAt == "" || created.UpdatedAt == "" {
+		t.Fatalf("expected created_at/updated_at in create response, got %+v", created)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
@@ -81,8 +117,84 @@ func TestDevicesAPI_CreateAndList(t *testing.T) {
 	if len(resp.Devices) != 1 {
 		t.Fatalf("expected 1 device, got %d", len(resp.Devices))
 	}
-	if resp.Devices[0].APIKey != "abc123" {
-		t.Fatalf("expected api key abc123, got %q", resp.Devices[0].APIKey)
+	if resp.Devices[0].APIKeyPreview == "" {
+		t.Fatalf("expected masked api key preview, got %+v", resp.Devices[0])
+	}
+	if resp.Devices[0].APIKeyPreview == "abc123" {
+		t.Fatalf("expected list response key to be masked, got %q", resp.Devices[0].APIKeyPreview)
+	}
+}
+
+func TestDevicesAPI_GetMasksKey(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
+
+	body := []byte(`{"name":"phone","source_type":"owntracks","api_key":"abc123"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/devices/1", nil)
+	getRec := httptest.NewRecorder()
+	mux.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", getRec.Code, getRec.Body.String())
+	}
+
+	var resp devicePublicResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal get response failed: %v", err)
+	}
+	if resp.APIKeyPreview == "" || resp.APIKeyPreview == "abc123" {
+		t.Fatalf("expected masked preview for get response, got %+v", resp)
+	}
+}
+
+func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
+
+	createBody := []byte(`{"name":"phone","source_type":"owntracks","api_key":"old-key"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	rotateBody := []byte(`{"api_key":"new-key"}`)
+	rotateReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewReader(rotateBody))
+	rotateReq.Header.Set("Content-Type", "application/json")
+	rotateRec := httptest.NewRecorder()
+	mux.ServeHTTP(rotateRec, rotateReq)
+	if rotateRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rotateRec.Code, rotateRec.Body.String())
+	}
+
+	var rotated deviceSecretResponse
+	if err := json.Unmarshal(rotateRec.Body.Bytes(), &rotated); err != nil {
+		t.Fatalf("unmarshal rotate response failed: %v", err)
+	}
+	if rotated.APIKey != "new-key" {
+		t.Fatalf("expected rotated full key new-key, got %q", rotated.APIKey)
+	}
+
+	if _, err := ds.GetDeviceByAPIKey(context.Background(), "old-key"); !errors.Is(err, store.ErrDeviceNotFound) {
+		t.Fatalf("expected old key to be invalidated, got err=%v", err)
+	}
+	loaded, err := ds.GetDeviceByAPIKey(context.Background(), "new-key")
+	if err != nil {
+		t.Fatalf("expected new key lookup success, got %v", err)
+	}
+	if loaded.ID != 1 {
+		t.Fatalf("expected rotated key to map to device id=1, got %d", loaded.ID)
 	}
 }
 

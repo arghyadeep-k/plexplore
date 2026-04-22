@@ -43,10 +43,21 @@ func (m *FileSpoolManager) AdvanceCheckpoint(lastCommittedSeq uint64) (Checkpoin
 	if err != nil {
 		return Checkpoint{}, err
 	}
-	if err := os.WriteFile(m.CheckpointPath(), data, 0o644); err != nil {
+	file, err := os.OpenFile(m.CheckpointPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return Checkpoint{}, fmt.Errorf("open checkpoint for write: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
 		return Checkpoint{}, fmt.Errorf("write checkpoint: %w", err)
 	}
-
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return Checkpoint{}, fmt.Errorf("sync checkpoint: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return Checkpoint{}, fmt.Errorf("close checkpoint: %w", err)
+	}
 	return next, nil
 }
 

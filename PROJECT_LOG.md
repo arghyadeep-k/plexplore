@@ -946,3 +946,689 @@ Pending:
 
 Known issues:
 - `.gitignore` does not untrack files already committed in git history; if any ignored paths were previously tracked, they must be removed from index separately.
+
+### 2026-04-22 12:55 - Phase 27 (Ingest Pipeline Integration Coverage)
+Implemented:
+- Added robust end-to-end integration tests in `internal/tasks/ingest_pipeline_integration_test.go` using temporary spool directories and temporary SQLite databases.
+- Covered required scenarios:
+- OwnTracks ingest -> spool append -> RAM buffer -> flush -> SQLite insert.
+- Overland ingest -> spool append -> RAM buffer -> flush -> SQLite insert.
+- Duplicate ingest does not create duplicate SQLite rows.
+- Checkpoint advances only after successful SQLite commit (with injected one-time SQLite failure).
+- Startup recovery replays spool records after simulated crash before flush.
+- Spool segment rollover replays correctly after restart/recovery.
+- Added small reusable test helpers for:
+- schema setup from `migrations/0001_init_schema.sql`
+- authenticated ingest requests against real route wiring
+- DB row count / query assertions
+- restart runtime assembly for recovery checks
+- Kept tests deterministic (fixed payload timestamps/coordinates, direct `FlushNow`, no background ticker dependency) and fast (<3s for integration package run).
+
+Architectural decisions:
+- Decision: Keep integration tests inside `internal/tasks` and run through real component wiring (`api` + `spool` + `buffer` + `flusher` + `sqlite`), rather than introducing new test-only abstractions.
+  Reason: Preserve current architecture and validate actual production flow with minimal added code.
+
+Files changed:
+- `internal/tasks/ingest_pipeline_integration_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/ingest_pipeline_integration_test.go`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+
+Pending:
+- Implement explicit ingest size-pressure policy to call flusher trigger under high buffer pressure.
+- Integrate spool compaction immediately after successful checkpoint advancement in flusher commit workflow.
+- Add handling for duplicate records filtered by RAM dedupe so replay-pending duplicate spool seq can still advance checkpoint without waiting for restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicate ingest can be filtered by RAM dedupe before flush; SQLite rows stay deduplicated correctly, but checkpoint may remain behind latest spool seq until a restart recovery replay processes that duplicate record.
+- Device API still returns `api_key` in list/create responses; consider masking for safer default operations.
+
+### 2026-04-22 13:01 - Phase 28 (Operational Status Endpoint Expansion)
+Implemented:
+- Extended existing `GET /api/v1/status` endpoint to include requested operational fields while keeping the response simple and low-overhead.
+- Added response fields:
+- `service_health`
+- `buffer_points`
+- `buffer_bytes`
+- `oldest_buffered_age_seconds`
+- `spool_dir_path`
+- `spool_segment_count`
+- `checkpoint_seq`
+- `last_flush_attempt_at_utc`
+- `last_flush_success_at_utc`
+- `last_flush_error` (when present)
+- `sqlite_db_path`
+- Kept existing `last_flush` object for backwards compatibility with current UI and clients.
+- Wired runtime path metadata into status dependencies from server config (`SpoolDir`, `SQLitePath`).
+- Extended flusher status bookkeeping so each flush result includes both last attempt time and most recent successful flush time.
+- Added/updated endpoint tests in `internal/api/status_test.go` for:
+- expanded operational fields on success
+- last flush error payload behavior when latest attempt fails
+- Updated README status section with explicit `curl` command and example JSON response.
+
+Architectural decisions:
+- Decision: Expand the existing `/api/v1/status` schema additively (instead of introducing a new status endpoint or replacing fields).
+  Reason: Preserve compatibility for current UI/clients while meeting operational visibility requirements with minimal overhead.
+
+Files changed:
+- `internal/flusher/flusher.go`
+- `internal/api/health.go`
+- `internal/api/status.go`
+- `internal/api/status_test.go`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/flusher/flusher.go internal/api/health.go internal/api/status.go internal/api/status_test.go cmd/server/main.go`
+- `go test ./internal/api ./internal/flusher`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device API still returns `api_key` in list/create responses and should be hardened later.
+
+### 2026-04-22 13:12 - Phase 29 (Status Route Alias Fix)
+Implemented:
+- Added status endpoint alias route `GET /status` mapped to the same handler as `GET /api/v1/status`.
+- Added API test coverage for alias route behavior in `internal/api/status_test.go`.
+- Updated README operational status section to document alias usage and example `curl` against `/status`.
+- Root cause addressed: endpoint existed at `/api/v1/status`, but `/status` was not previously registered, which caused `404 page not found`.
+
+Files changed:
+- `internal/api/status.go`
+- `internal/api/status_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/status.go internal/api/status_test.go`
+- `go test ./internal/api`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device API still returns `api_key` in list/create responses and should be hardened later.
+
+### 2026-04-22 13:18 - Phase 30 (Graceful Shutdown Hardening)
+Implemented:
+- Hardened shutdown request-path behavior:
+- added ingest draining gate via `Dependencies.IsDraining` callback
+- ingest endpoints now return `503 service is shutting down` while draining is active
+- Hardened server shutdown sequence in `cmd/server/main.go`:
+- on signal, set draining mode before shutdown
+- disable keep-alives to reduce new request reuse during drain
+- run `server.Shutdown(...)` with explicit server timeout (in-flight completion window)
+- run `batchFlusher.Stop(...)` with a separate flush timeout to drain RAM buffer to SQLite
+- Hardened spool durability on shutdown/checkpoint path:
+- spool segment close path now syncs pending bytes regardless of fsync mode when closing for shutdown
+- checkpoint advancement now writes via open/write/sync/close path instead of unsynced `os.WriteFile`
+- Added/updated tests:
+- ingest API test verifies new ingest is rejected during shutdown drain and does not append/enqueue
+- existing spool checkpoint/replay tests still pass under updated checkpoint write path
+- Added README shutdown documentation:
+- manual validation procedure
+- explicit behavior differences for clean shutdown vs forced kill vs crash/power loss
+
+Architectural decisions:
+- Decision: Introduce a minimal ingest drain gate tied to process shutdown state.
+  Reason: Stop accepting new ingest promptly during shutdown without redesigning routing/flusher architecture.
+
+Files changed:
+- `cmd/server/main.go`
+- `internal/api/health.go`
+- `internal/api/ingest.go`
+- `internal/api/ingest_test.go`
+- `internal/spool/append.go`
+- `internal/spool/replay.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w cmd/server/main.go internal/api/health.go internal/api/ingest.go internal/api/ingest_test.go internal/spool/append.go internal/spool/replay.go`
+- `go test ./internal/api ./internal/spool ./cmd/server`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- Clean shutdown remains best-effort and bounded by shutdown timeouts; a forced termination can still interrupt in-flight flush progress.
+- Device API still returns `api_key` in list/create responses and should be hardened later.
+
+### 2026-04-22 13:29 - Phase 31 (Startup Recovery Correctness Review)
+Implemented:
+- Reviewed startup path ordering and confirmed recovery executes before HTTP listen path:
+- `RecoverFromSpool(...)` runs before route registration/server `ListenAndServe`
+- Added startup recovery tests for required correctness cases:
+- replay after crash before flush (already covered and retained)
+- replay after partial progress (`checkpoint=2`, replay remaining `seq=3`)
+- replay when checkpoint is already advanced (already covered and retained)
+- stale checkpoint replay does not duplicate SQLite rows (`ingest_hash` uniqueness dedupe)
+- Added README section `Startup Recovery Flow` documenting:
+- checkpoint-based replay behavior (`seq > checkpoint`)
+- flush/commit/checkpoint progression
+- duplicate-safe replay behavior when checkpoint is stale
+- startup ordering (recovery before ingest traffic)
+
+Architectural decisions:
+- Decision: Keep startup recovery checkpoint-driven and rely on SQLite uniqueness (`ingest_hash`) for idempotent replay safety when checkpoint lags.
+  Reason: Preserves current architecture with minimal changes while improving correctness guarantees.
+
+Files changed:
+- `internal/tasks/startup_recovery_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/startup_recovery_test.go`
+- `go test ./internal/tasks -run TestRecoverFromSpool -count=1`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device API still returns `api_key` in list/create responses and should be hardened later.
+
+### 2026-04-22 13:35 - Phase 32 (Device API Key Hygiene + Rotation)
+Implemented:
+- Improved device API key handling:
+- create endpoint returns full `api_key` once (`POST /api/v1/devices`)
+- list/read endpoints no longer return full key; they return `api_key_preview` mask
+- added device read endpoint: `GET /api/v1/devices/{id}`
+- added API key rotation endpoint: `POST /api/v1/devices/{id}/rotate-key`
+- Added timestamp fields on device responses:
+- `created_at`
+- `updated_at`
+- `last_seen_at` (when available)
+- Added store-level device methods:
+- `GetDeviceByID(...)`
+- `RotateDeviceAPIKey(...)`
+- Updated ingest persistence path so device `updated_at` is maintained on writes.
+- Added migration `0002_devices_updated_at.sql` to add and backfill `devices.updated_at`.
+- Updated test migration loaders to apply all `.sql` migrations in order.
+- Added/updated tests for required behaviors:
+- create returns full key once
+- list/read do not return full key (masked preview only)
+- rotate key invalidates old key and returns new key
+
+Architectural decisions:
+- Decision: Keep API key masking strictly at API response layer while retaining full key in store for authentication lookup.
+  Reason: Minimal change to existing auth flow with immediate hygiene improvement for list/read output.
+- Decision: Add incremental schema migration for `devices.updated_at` instead of mutating existing migration in place.
+  Reason: Safer evolution path for already-initialized databases.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/devices.go`
+- `internal/api/devices_test.go`
+- `internal/store/devices.go`
+- `internal/store/devices_test.go`
+- `internal/store/sqlite_store.go`
+- `internal/store/sqlite_store_test.go`
+- `internal/tasks/startup_recovery_test.go`
+- `internal/tasks/ingest_pipeline_integration_test.go`
+- `migrations/0002_devices_updated_at.sql`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/devices.go internal/api/devices_test.go internal/store/devices.go internal/store/devices_test.go internal/store/sqlite_store.go internal/store/sqlite_store_test.go internal/tasks/startup_recovery_test.go internal/tasks/ingest_pipeline_integration_test.go`
+- `go test ./internal/api ./internal/store`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device list/read now mask API keys, but endpoint auth/authorization model is still minimal single-user and should be hardened for multi-user contexts.
+
+### 2026-04-22 13:43 - Phase 33 (Task 1 Client Setup Documentation)
+Implemented:
+- Added practical README client setup documentation for real device testing:
+- `Connect OwnTracks` section with endpoint, auth method, required headers, and payload example
+- `Connect Overland` section with endpoint, auth method, required headers, and payload example
+- Added known caveats for both client paths
+- Added concise ingest troubleshooting guidance for `400`, `401`, and `500` responses
+- Kept content aligned with current code behavior (no unsupported UI-specific claims)
+
+Files changed:
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `date -Iseconds`
+
+Pending:
+- Complete Task 2 from `codex_tasks.md`: add `GET /api/v1/points/recent` with `device_id` and `limit` query support, tests, and README examples.
+- Continue core durability follow-ups from active milestone (flush trigger policy, spool compaction, duplicate-checkpoint lag).
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:03 - Phase 34 (Task 2 Recent Points Inspection Endpoint)
+Implemented:
+- Added compact debugging endpoint: `GET /api/v1/points/recent`.
+- Added optional query params:
+- `device_id` (device-name filter)
+- `limit` (positive integer; default `50`, capped at `500`)
+- Added SQLite-backed recent-point query in store:
+- `ListRecentPoints(ctx, deviceID, limit)` joining `raw_points` and `devices`
+- returns compact fields: `seq`, `device_id`, `source_type`, `timestamp_utc`, `lat`, `lon`
+- Wired new `PointStore` dependency and route registration in API/server.
+- Added tests:
+- API handler tests for default behavior, filter+limit behavior, and invalid limit (`400`)
+- store test for ordering, filtering, and limit behavior against real SQLite inserts
+- Updated README with recent-points endpoint examples.
+- Updated migration SQL loading in tests to apply all migration files in lexical order (supports new migrations without brittle single-file assumptions).
+
+Architectural decisions:
+- Decision: Expose recent-point inspection as a lightweight read-only endpoint in existing API mux.
+  Reason: Improves operational debugging without introducing map/timeline features or heavy dependencies.
+
+Files changed:
+- `internal/store/points.go`
+- `internal/api/health.go`
+- `internal/api/points.go`
+- `internal/api/points_test.go`
+- `internal/store/sqlite_store_test.go`
+- `internal/tasks/startup_recovery_test.go`
+- `internal/tasks/ingest_pipeline_integration_test.go`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/points.go internal/api/health.go internal/api/points.go internal/api/points_test.go internal/store/sqlite_store_test.go cmd/server/main.go`
+- `go test ./internal/api ./internal/store`
+- `go test ./...`
+
+Pending:
+- Continue `codex_tasks.md` in order with Task 3 (GeoJSON export endpoint + filters/tests/docs).
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:07 - Phase 35 (Task 3 GeoJSON Export)
+Implemented:
+- Added export endpoint: `GET /api/v1/exports/geojson`.
+- Added optional filters:
+- `device_id` (device name)
+- `from` (RFC3339)
+- `to` (RFC3339)
+- Added lightweight GeoJSON `FeatureCollection` response generation with per-point `Feature` + `Point` geometry.
+- Added store query for export data: `ListPointsForExport(...)` with ordered output and optional filters.
+- Added tests:
+- API tests for valid GeoJSON structure and invalid timestamp query handling
+- store test for export filtering behavior
+- Updated README with GeoJSON endpoint usage examples.
+
+Files changed:
+- `internal/store/points.go`
+- `internal/api/health.go`
+- `internal/api/exports.go`
+- `internal/api/exports_test.go`
+- `internal/api/points_test.go`
+- `internal/store/sqlite_store_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/points.go internal/api/health.go internal/api/exports.go internal/api/exports_test.go internal/api/points_test.go internal/store/sqlite_store_test.go`
+- `go test ./internal/api ./internal/store`
+- `go test ./...`
+
+Pending:
+- Complete `codex_tasks.md` Task 4: add `GET /api/v1/exports/gpx` with `from/to/device_id` filters, tests, and README examples.
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:09 - Phase 36 (Task 4 GPX Export)
+Implemented:
+- Added export endpoint: `GET /api/v1/exports/gpx`.
+- Reused optional filters:
+- `device_id` (device name)
+- `from` (RFC3339)
+- `to` (RFC3339)
+- Added lightweight GPX 1.1 response generation (`application/gpx+xml`) with:
+- `<gpx>` root
+- `<trk>/<trkseg>`
+- `<trkpt lat=\"...\" lon=\"...\"><time>...</time></trkpt>` entries
+- Added API tests for:
+- valid GPX structure/content (including track points and coordinates)
+- invalid timestamp query returns `400`
+- Updated README with GPX usage examples.
+
+Architectural decisions:
+- Decision: Share export filter parsing between GeoJSON and GPX endpoints.
+  Reason: Keep implementation simple/consistent and reduce duplicated filter logic.
+
+Files changed:
+- `internal/api/exports.go`
+- `internal/api/exports_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/exports.go internal/api/exports_test.go`
+- `go test ./internal/api`
+- `go test ./...`
+
+Pending:
+- Add explicit size-based flush trigger policy from buffer pressure stats in ingest path.
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without restart recovery.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:19 - Phase 37 (Task 5 Lightweight Admin/Status Page)
+Implemented:
+- Extended minimal web UI to include a recent points preview table.
+- UI now fetches `/api/v1/points/recent?limit=10` and renders:
+- sequence number
+- device id
+- UTC timestamp
+- latitude/longitude (fixed precision)
+- Added graceful fallback rendering when recent points endpoint is unavailable.
+- Kept UI lightweight (same plain HTML/CSS/vanilla JS, no build tooling/dependencies).
+- Added UI test assertion to ensure recent points section is present in rendered page.
+- Updated README minimal UI section to include spool/checkpoint visibility and recent points preview.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api`
+
+Pending:
+- Complete `codex_tasks.md` Task 6 (Raspberry Pi deployment assets and docs).
+- Complete `codex_tasks.md` Task 7 (lightweight Dockerization and docs).
+- Continue durability follow-up items (flush trigger policy, compaction-after-commit, duplicate-checkpoint lag).
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:21 - Phase 38 (Task 6 Raspberry Pi Deployment Prep)
+Implemented:
+- Added sample systemd unit for service deployment.
+- Added sample environment file with low-overhead defaults and persistent `/var/lib/plexplore` paths.
+- Added minimal install/setup script to:
+- create service user and directories
+- install binary/service/env files
+- enable and start the service
+- Added README deployment documentation covering:
+- DB path and spool path
+- start/stop/restart/status commands
+- log inspection with `journalctl`
+- backup procedure for DB and spool
+
+Architectural decisions:
+- Decision: Provide deployment as file templates + a small shell installer instead of adding packaging tooling.
+  Reason: Keep Raspberry Pi operations simple, transparent, and low-overhead.
+
+Files changed:
+- `deploy/systemd/plexplore.service`
+- `deploy/systemd/plexplore.env.sample`
+- `scripts/install_systemd.sh`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./...`
+- `ls -l scripts/install_systemd.sh`
+
+Pending:
+- Complete `codex_tasks.md` Task 7 (lightweight Dockerization and docs).
+- Continue durability follow-up items (flush trigger policy, compaction-after-commit, duplicate-checkpoint lag).
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:27 - Phase 39 (Task 7 Lightweight Dockerization)
+Implemented:
+- Added lightweight multi-stage Docker build:
+- build stage compiles `plexplore-server` and `plexplore-migrate`
+- runtime stage uses Alpine with `sqlite` CLI for migration runner compatibility
+- Added container entrypoint script to run migrations then start server.
+- Added `.dockerignore` to keep build context small and avoid including runtime state/log artifacts.
+- Added optional `compose.yaml` single-container setup with `/data` bind mount and runtime env defaults.
+- Updated README with:
+- `docker build`
+- `docker run`
+- `docker compose up/down`
+- `/data` volume mapping details
+- key env vars for container runtime
+- Raspberry Pi Zero 2 W caveats
+- Verified status and export endpoints from running container on host-mapped port.
+
+Architectural decisions:
+- Decision: Keep Docker runtime as single container with SQLite+spool persisted to mounted `/data` volume.
+  Reason: Matches low-overhead architecture and avoids introducing Redis/PostgreSQL or multi-service operational complexity.
+
+Files changed:
+- `Dockerfile`
+- `.dockerignore`
+- `compose.yaml`
+- `scripts/docker-entrypoint.sh`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./...`
+- `docker --version`
+- `docker compose config`
+- `docker build -t plexplore:dev .`
+- `docker run --rm -p 18080:8080 -v /mnt/d/Code/plexplore/data:/data plexplore:dev`
+- `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/status`
+- `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/api/v1/exports/geojson`
+- `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/api/v1/exports/gpx`
+
+Pending:
+- Resume durability follow-up items (flush trigger policy, compaction-after-commit, duplicate-checkpoint lag).
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:36 - Phase 40 (Ingest Pressure-Based Flush Trigger)
+Implemented:
+- Added explicit best-effort pressure-based flush triggering in ingest path.
+- After successful spool append + RAM enqueue, ingest now checks buffer stats and triggers flusher when either threshold is crossed:
+- point count threshold
+- byte threshold
+- Kept request handlers thin and non-blocking:
+- no direct SQLite writes from request path
+- flush trigger uses existing async `TriggerFlush()` path
+- periodic flush loop remains unchanged.
+- Added config knobs with env-driven loading:
+- `APP_FLUSH_TRIGGER_POINTS`
+- `APP_FLUSH_TRIGGER_BYTES`
+- Defaults are `75%` of `APP_BUFFER_MAX_POINTS` and `APP_BUFFER_MAX_BYTES`.
+- Wired thresholds into API dependencies from server startup config.
+- Added ingest API tests covering required behavior:
+- no pressure does not trigger flush
+- point-threshold crossing triggers flush
+- byte-threshold crossing triggers flush
+- Updated deployment templates with new env knobs:
+- `deploy/systemd/plexplore.env.sample`
+- `compose.yaml`
+- Updated README with policy summary and new config documentation.
+
+Architectural decisions:
+- Decision: Implement pressure handling as an ingest-path async flush trigger gate (stats check + `TriggerFlush`) rather than synchronous flush in request handlers.
+  Reason: Keeps ingest low-latency and architecture unchanged while improving high-pressure responsiveness.
+
+Files changed:
+- `internal/config/config.go`
+- `internal/api/health.go`
+- `internal/api/ingest.go`
+- `internal/api/ingest_test.go`
+- `cmd/server/main.go`
+- `deploy/systemd/plexplore.env.sample`
+- `compose.yaml`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/config/config.go internal/api/health.go internal/api/ingest.go internal/api/ingest_test.go cmd/server/main.go`
+- `go test ./internal/api ./internal/config ./cmd/server`
+- `go test ./...`
+
+Pending:
+- Run spool compaction after successful checkpoint advancement in flusher commit workflow.
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without requiring restart recovery.
+- Add a focused runtime/integration assertion that pressure-triggered flush path advances checkpoint under sustained ingest.
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:40 - Phase 41 (Flusher Commit-Path Spool Compaction)
+Implemented:
+- Integrated spool compaction into successful flusher commit workflow.
+- Flusher behavior is now:
+  1. SQLite batch insert succeeds
+  2. checkpoint advancement succeeds
+  3. best-effort compact committed spool segments
+- Compaction is best-effort by design:
+- compaction failure does not roll back/invalidates successful commit
+- compaction failure is logged with lightweight `log.Printf(...)`
+- Preserved failure gates:
+- SQLite insert failure: no checkpoint advance, no compaction
+- checkpoint advance failure: no compaction
+- Added/updated flusher unit tests for required cases:
+- successful commit advances checkpoint and triggers compaction
+- failed SQLite commit does not compact
+- failed checkpoint advancement does not compact
+- compaction failure does not corrupt successful commit behavior
+- Updated README flush policy notes to include post-checkpoint best-effort spool compaction.
+
+Architectural decisions:
+- Decision: Keep compaction coupled to successful checkpoint advancement but non-fatal.
+  Reason: Maintains durability correctness while reclaiming spool space automatically with minimal runtime overhead.
+
+Files changed:
+- `internal/flusher/flusher.go`
+- `internal/flusher/flusher_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/flusher/flusher.go internal/flusher/flusher_test.go`
+- `go test ./internal/flusher`
+- `go test ./...`
+
+Pending:
+- Resolve duplicate-dedupe checkpoint lag so replay-pending duplicate spool seq can advance without requiring restart recovery.
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Consider improving checkpoint-failure handling to requeue drained batch safely (currently existing behavior remains unchanged in this change).
+
+Known issues:
+- In current behavior, immediate duplicates can still remain replay-pending in spool until recovery because RAM dedupe may drop them before flush.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:44 - Phase 42 (Duplicate-Dedupe Checkpoint Lag Fix)
+Implemented:
+- Fixed duplicate-dedupe checkpoint lag without removing spool durability or dedupe behavior.
+- RAM dedupe now converts near-duplicate records into lightweight checkpoint-only markers instead of dropping them entirely.
+- Checkpoint-only marker behavior:
+- preserves spool sequence progression through normal flusher path
+- strips raw payload in memory to reduce RAM impact
+- skips SQLite insert work
+- Flusher commit logic now splits drained batch into:
+- write batch (normal records) for SQLite
+- checkpoint sequence watermark over full batch (including checkpoint-only markers)
+- Result:
+- duplicate rows remain deduplicated in SQLite
+- checkpoint now advances through duplicate spool sequence during normal runtime
+- replay-pending duplicate residues no longer require restart recovery to clear
+- Added flusher unit test:
+- checkpoint-only batch advances checkpoint without SQLite store writes
+- Updated integration tests:
+- immediate duplicate ingest still does not create duplicate SQLite rows
+- checkpoint advances through duplicate spooled records during normal runtime
+- restart recovery remains correct with no duplicate replay backlog after normal flush
+- Updated README flush policy section with brief checkpoint-only marker explanation.
+
+Architectural decisions:
+- Decision: Represent deduped duplicates as checkpoint-only records in RAM buffer + flusher pipeline.
+  Reason: Keeps architecture minimal and single-writer friendly while preserving dedupe intent and fixing checkpoint progression correctness.
+
+Files changed:
+- `internal/ingest/models.go`
+- `internal/buffer/manager.go`
+- `internal/buffer/manager_test.go`
+- `internal/flusher/flusher.go`
+- `internal/flusher/flusher_test.go`
+- `internal/tasks/ingest_pipeline_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/ingest/models.go internal/buffer/manager.go internal/buffer/manager_test.go internal/flusher/flusher.go internal/flusher/flusher_test.go internal/tasks/ingest_pipeline_integration_test.go`
+- `go test ./internal/buffer ./internal/flusher ./internal/tasks -run 'TestIntegration_Duplicate|TestManager_Dedupe|TestFlusher_CheckpointOnlyBatchAdvancesWithoutStoreWrite' -count=1`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Continue auth hardening beyond minimal single-user assumptions.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.

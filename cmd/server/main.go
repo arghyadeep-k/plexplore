@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -73,13 +74,22 @@ func main() {
 	)
 
 	batchFlusher.Start()
+	var draining atomic.Bool
 
 	mux := http.NewServeMux()
 	api.RegisterRoutesWithDependencies(mux, api.Dependencies{
-		DeviceStore: sqliteStore,
-		Spool:       spoolManager,
-		Buffer:      bufferManager,
-		Flusher:     batchFlusher,
+		DeviceStore:        sqliteStore,
+		Spool:              spoolManager,
+		Buffer:             bufferManager,
+		Flusher:            batchFlusher,
+		FlushTriggerPoints: cfg.FlushTriggerPoints,
+		FlushTriggerBytes:  cfg.FlushTriggerBytes,
+		PointStore:         sqliteStore,
+		SpoolDir:           cfg.SpoolDir,
+		SQLitePath:         cfg.SQLitePath,
+		IsDraining: func() bool {
+			return draining.Load()
+		},
 	})
 
 	server := &http.Server{
@@ -101,13 +111,18 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	draining.Store(true)
+	server.SetKeepAlivesEnabled(false)
 
-	if err := server.Shutdown(ctx); err != nil {
+	serverCtx, cancelServer := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelServer()
+	if err := server.Shutdown(serverCtx); err != nil {
 		log.Printf("graceful shutdown failed: %v", err)
 	}
-	if err := batchFlusher.Stop(ctx); err != nil {
+
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelFlush()
+	if err := batchFlusher.Stop(flushCtx); err != nil {
 		log.Printf("flusher stop failed: %v", err)
 	}
 }

@@ -26,6 +26,9 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if !strings.Contains(body, "Plexplore Status") {
 		t.Fatalf("expected status page title in body, got %q", body)
 	}
+	if !strings.Contains(body, "Recent Points") {
+		t.Fatalf("expected recent points section in body, got %q", body)
+	}
 }
 
 func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {

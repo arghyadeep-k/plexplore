@@ -134,11 +134,17 @@ func TestManager_DedupeSuppressesNearDuplicateFromSameDevice(t *testing.T) {
 	}
 
 	drained := manager.DrainBatch(10)
-	if len(drained) != 1 {
-		t.Fatalf("expected near-duplicate suppression to keep 1 record, got %d", len(drained))
+	if len(drained) != 2 {
+		t.Fatalf("expected checkpoint marker to preserve sequence for near-duplicate, got %d", len(drained))
 	}
 	if drained[0].Seq != r1.Seq {
 		t.Fatalf("expected first record to be retained, got seq=%d", drained[0].Seq)
+	}
+	if drained[1].Seq != r2.Seq || !drained[1].CheckpointOnly {
+		t.Fatalf("expected second record as checkpoint-only marker, got %+v", drained[1])
+	}
+	if len(drained[1].Point.RawPayload) != 0 {
+		t.Fatalf("expected checkpoint-only marker to strip raw payload, got len=%d", len(drained[1].Point.RawPayload))
 	}
 }
 

@@ -1,0 +1,26 @@
+services:
+  plexplore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: plexplore:latest
+    container_name: plexplore
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
+      APP_SQLITE_PATH: "/data/plexplore.db"
+      APP_SPOOL_DIR: "/data/spool"
+      APP_MIGRATIONS_DIR: "/app/migrations"
+      APP_BUFFER_MAX_POINTS: "256"
+      APP_BUFFER_MAX_BYTES: "262144"
+      APP_FLUSH_INTERVAL: "10s"
+      APP_FLUSH_BATCH_SIZE: "128"
+      APP_FLUSH_TRIGGER_POINTS: "192"
+      APP_FLUSH_TRIGGER_BYTES: "196608"
+      APP_SPOOL_FSYNC_MODE: "balanced"
+      APP_SPOOL_FSYNC_INTERVAL: "2s"
+      APP_SPOOL_FSYNC_BYTE_THRESHOLD: "65536"
+    volumes:
+      - ./data:/data

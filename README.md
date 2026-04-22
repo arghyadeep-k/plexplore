@@ -40,13 +40,31 @@ Expected response:
 
 - `POST /api/v1/devices` creates a device.
 - `GET /api/v1/devices` lists devices.
+- `GET /api/v1/devices/{id}` returns one device.
+- `POST /api/v1/devices/{id}/rotate-key` rotates device API key.
 
-Example create request:
+Device API key hygiene:
+- create and rotate responses include full `api_key` once
+- list/read responses return only `api_key_preview` (masked)
+
+Example workflow:
 
 ```bash
+# 1) Create device (full api_key returned once)
 curl -X POST http://localhost:8080/api/v1/devices \
   -H "Content-Type: application/json" \
   -d '{"name":"phone-main","source_type":"owntracks","api_key":"dev-key-1"}'
+
+# 2) List devices (masked api_key_preview only)
+curl -sS http://localhost:8080/api/v1/devices
+
+# 3) Read one device (masked api_key_preview only)
+curl -sS http://localhost:8080/api/v1/devices/1
+
+# 4) Rotate API key (new full api_key returned once)
+curl -X POST http://localhost:8080/api/v1/devices/1/rotate-key \
+  -H "Content-Type: application/json" \
+  -d '{"api_key":"dev-key-rotated-1"}'
 ```
 
 Assumption for this phase: single-user deployment.
@@ -65,14 +83,218 @@ Both endpoints require device API key auth via `X-API-Key` (or
 parse payload -> canonical points -> ensure ingest hash -> append spool ->
 enqueue RAM buffer. Handlers do not write directly to SQLite.
 
+## Connect OwnTracks
+
+Endpoint:
+- `POST http://<host>:8080/api/v1/owntracks`
+
+Authentication:
+- header: `X-API-Key: <device_api_key>`
+- alternatively: `Authorization: Bearer <device_api_key>`
+
+Headers:
+- `Content-Type: application/json`
+
+Payload expectations:
+- OwnTracks location event (`_type: "location"`)
+- required fields: `lat`, `lon`, `tst` (unix seconds)
+- example:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/owntracks \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key-1" \
+  -d '{"_type":"location","lat":41.0,"lon":-87.0,"tst":1713777600}'
+```
+
+Known caveats:
+- only location events are accepted (`_type=location`)
+- invalid coordinate/timestamp values return `400`
+
+## Connect Overland
+
+Endpoint:
+- `POST http://<host>:8080/api/v1/overland/batches`
+
+Authentication:
+- header: `X-API-Key: <device_api_key>`
+- alternatively: `Authorization: Bearer <device_api_key>`
+
+Headers:
+- `Content-Type: application/json`
+
+Payload expectations:
+- top-level `locations` array is required
+- each location requires `coordinates: [lon, lat]` and `timestamp` (RFC3339)
+- optional top-level `device_id` is accepted; authenticated device identity is enforced server-side
+- example:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/overland/batches \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key-1" \
+  -d '{"device_id":"phone-main","locations":[{"coordinates":[-87.0,41.0],"timestamp":"2026-04-22T12:00:00Z"}]}'
+```
+
+Known caveats:
+- GeoJSON `geometry.coordinates` payloads are not supported
+- use `locations[].coordinates` only
+
+## Ingest Troubleshooting
+
+- `400 Bad Request`:
+  payload shape/fields are invalid (for example missing `lat/lon/tst` in OwnTracks, invalid Overland `coordinates` or timestamp format)
+- `401 Unauthorized`:
+  API key missing or invalid; verify `X-API-Key`/`Authorization` and device key rotation state
+- `500 Internal Server Error`:
+  server-side issue (commonly migration/schema mismatch or SQLite/runtime failure); run `make migrate`, check `/api/v1/status`, and inspect server logs
+
 ## Operational Status
 
-- `GET /api/v1/status` returns a small JSON snapshot for operations:
-- current buffer points/bytes
-- oldest buffered age (seconds)
-- spool segment count
-- current checkpoint sequence
-- last flush result (when available)
+- `GET /api/v1/status` (and alias `GET /status`) returns a small JSON snapshot for operations.
+
+Example:
+
+```bash
+curl -sS http://localhost:8080/status
+```
+
+Example response:
+
+```json
+{
+  "service_health": "ok",
+  "buffer_points": 0,
+  "buffer_bytes": 0,
+  "oldest_buffered_age_seconds": 0,
+  "spool_dir_path": "./data/spool",
+  "spool_segment_count": 1,
+  "checkpoint_seq": 42,
+  "last_flush_attempt_at_utc": "2026-04-22T17:35:10.148337224Z",
+  "last_flush_success_at_utc": "2026-04-22T17:35:10.148337224Z",
+  "sqlite_db_path": "./data/plexplore.db",
+  "last_flush": {
+    "at_utc": "2026-04-22T17:35:10.148337224Z",
+    "success": true
+  }
+}
+```
+
+Included fields (when available):
+- service health
+- buffer points/bytes and oldest buffered age
+- spool directory path, active segment count, checkpoint sequence
+- last flush attempt time, last successful flush time, last flush error
+- SQLite database path
+
+## Recent Points (Debug)
+
+- `GET /api/v1/points/recent` returns compact recent stored points from SQLite.
+- query params:
+- `device_id` (optional): device name filter
+- `limit` (optional): max rows (default `50`, max `500`)
+
+Examples:
+
+```bash
+# recent points across devices
+curl -sS "http://localhost:8080/api/v1/points/recent"
+
+# recent points for one device
+curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=20"
+```
+
+## GeoJSON Export
+
+- `GET /api/v1/exports/geojson` returns stored points as GeoJSON FeatureCollection.
+- optional filters:
+- `from` (RFC3339 timestamp)
+- `to` (RFC3339 timestamp)
+- `device_id` (device name)
+
+Examples:
+
+```bash
+# all points as GeoJSON
+curl -sS "http://localhost:8080/api/v1/exports/geojson"
+
+# filtered GeoJSON export
+curl -sS "http://localhost:8080/api/v1/exports/geojson?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"
+```
+
+## GPX Export
+
+- `GET /api/v1/exports/gpx` returns stored points as GPX 1.1.
+- optional filters:
+- `from` (RFC3339 timestamp)
+- `to` (RFC3339 timestamp)
+- `device_id` (device name)
+
+Examples:
+
+```bash
+# all points as GPX
+curl -sS "http://localhost:8080/api/v1/exports/gpx"
+
+# filtered GPX export
+curl -sS "http://localhost:8080/api/v1/exports/gpx?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"
+```
+
+## Shutdown And Recovery Behavior
+
+Shutdown handling is designed to be simple and reliability-first:
+- on `SIGINT`/`SIGTERM`, service enters draining mode and rejects new ingest requests (`503`)
+- HTTP server stops accepting new work and lets in-flight requests finish (within shutdown timeout)
+- flusher attempts to drain pending RAM buffer records to SQLite before exit
+- spool files and checkpoint are synced on close/write paths used during shutdown
+
+Behavior differences:
+- Clean shutdown (`SIGINT`/`SIGTERM`): best effort to complete in-flight requests, flush buffer to SQLite, and advance checkpoint.
+- Forced kill (`SIGKILL`): no graceful hooks run; buffered (not-yet-flushed) points may be lost from RAM and checkpoint may lag.
+- Crash/power loss: similar to forced kill; on next startup, spool replay recovers records with sequence > checkpoint.
+
+Manual validation procedure:
+1. Start service:
+```bash
+make run
+```
+2. Create a device and ingest one point:
+```bash
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Content-Type: application/json" \
+  -d '{"name":"phone-main","source_type":"owntracks","api_key":"dev-key-1"}'
+
+curl -X POST http://localhost:8080/api/v1/owntracks \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key-1" \
+  -d '{"_type":"location","lat":41.0,"lon":-87.0,"tst":1713777600}'
+```
+3. Send graceful signal (replace `<pid>`):
+```bash
+kill -TERM <pid>
+```
+4. Restart service and verify status/checkpoint:
+```bash
+make run
+curl -sS http://localhost:8080/status
+```
+Expected: service starts cleanly; status shows no request-path errors and checkpoint is at or beyond recently flushed sequence.
+
+## Startup Recovery Flow
+
+Startup recovery runs before normal ingest traffic begins:
+1. server opens spool, SQLite store, and RAM buffer
+2. `RecoverFromSpool(...)` reads current checkpoint
+3. spool replays records with `seq > checkpoint.last_committed_seq`
+4. replayed records are enqueued into RAM buffer in bounded chunks
+5. flusher runs an immediate flush to SQLite
+6. checkpoint advances only after successful SQLite commit
+7. HTTP server starts listening after recovery step completes
+
+Notes:
+- replay is checkpoint-based, so already-committed records are normally skipped
+- if checkpoint is stale, replay may attempt already-committed rows; SQLite `ingest_hash` uniqueness prevents duplicate `raw_points` rows
+- after crash/power loss, recovery replays uncheckpointed spool data on next startup
 
 ## Minimal Web UI
 
@@ -81,11 +303,114 @@ enqueue RAM buffer. Handlers do not write directly to SQLite.
 
 The page is intentionally minimal (plain HTML/CSS/vanilla JS, no SPA build
 toolchain) and is served directly by the Go HTTP server. It reads existing JSON
-endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`) to show:
+endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recent`) to show:
 - service health
 - devices
 - buffer stats
+- spool/checkpoint status
 - last flush status
+- recent points preview
+
+## Raspberry Pi Deployment (systemd)
+
+Sample deployment files are included:
+- `deploy/systemd/plexplore.service`
+- `deploy/systemd/plexplore.env.sample`
+- `scripts/install_systemd.sh`
+
+Suggested persistent paths on Pi:
+- SQLite DB: `/var/lib/plexplore/plexplore.db`
+- Spool dir: `/var/lib/plexplore/spool`
+
+Build and install:
+
+```bash
+go build -o plexplore-server ./cmd/server
+sudo ./scripts/install_systemd.sh
+```
+
+Service operations:
+
+```bash
+sudo systemctl start plexplore
+sudo systemctl stop plexplore
+sudo systemctl restart plexplore
+sudo systemctl status plexplore
+```
+
+Inspect logs:
+
+```bash
+sudo journalctl -u plexplore -f
+sudo journalctl -u plexplore --since "1 hour ago"
+```
+
+Back up DB and spool (recommended while service is stopped):
+
+```bash
+sudo systemctl stop plexplore
+sudo cp /var/lib/plexplore/plexplore.db /var/lib/plexplore/plexplore.db.bak
+sudo tar -czf /var/lib/plexplore/spool-$(date +%F-%H%M%S).tgz -C /var/lib/plexplore spool
+sudo systemctl start plexplore
+```
+
+## Docker (Single Container)
+
+This repo includes a lightweight multi-stage Docker setup suitable for ARM and x86.
+The container stores SQLite and spool state under `/data` (mounted volume).
+
+Files:
+- `Dockerfile`
+- `.dockerignore`
+- `compose.yaml` (optional)
+
+Build image:
+
+```bash
+docker build -t plexplore:dev .
+```
+
+Run container:
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v "$(pwd)/data:/data" \
+  -e APP_HTTP_LISTEN_ADDR=0.0.0.0:8080 \
+  -e APP_SQLITE_PATH=/data/plexplore.db \
+  -e APP_SPOOL_DIR=/data/spool \
+  plexplore:dev
+```
+
+The container entrypoint runs migrations first, then starts the server.
+
+Compose:
+
+```bash
+docker compose up --build -d
+docker compose down
+```
+
+Environment variables commonly used in containers:
+- `APP_HTTP_LISTEN_ADDR` (default in image: `0.0.0.0:8080`)
+- `APP_SQLITE_PATH` (default in image: `/data/plexplore.db`)
+- `APP_SPOOL_DIR` (default in image: `/data/spool`)
+- `APP_MIGRATIONS_DIR` (default in image: `/app/migrations`)
+- `APP_BUFFER_MAX_POINTS`
+- `APP_BUFFER_MAX_BYTES`
+- `APP_FLUSH_INTERVAL`
+- `APP_FLUSH_BATCH_SIZE`
+- `APP_FLUSH_TRIGGER_POINTS`
+- `APP_FLUSH_TRIGGER_BYTES`
+- `APP_SPOOL_FSYNC_MODE`
+- `APP_SPOOL_FSYNC_INTERVAL`
+- `APP_SPOOL_FSYNC_BYTE_THRESHOLD`
+
+Raspberry Pi Zero 2 W caveats:
+- Prefer running on local Pi storage or a reliable SSD-backed USB volume; avoid unstable network mounts for `/data`.
+- Use conservative defaults (`balanced` fsync mode, modest buffer sizes) to reduce RAM and SD-card wear.
+- For best compatibility, build on the target Pi (or use `docker buildx` for the exact target architecture/variant).
+- Keep only one service instance writing to a given `/data` volume.
 
 ## Environment Variables
 
@@ -101,9 +426,19 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`) to show:
 - `APP_BUFFER_MAX_BYTES` (default: `262144`): approximate max bytes held in RAM buffer.
 - `APP_FLUSH_INTERVAL` (default: `10s`): periodic flush interval from buffer to durable store.
 - `APP_FLUSH_BATCH_SIZE` (default: `128`): max points per flush batch.
+- `APP_FLUSH_TRIGGER_POINTS` (default: `75%` of `APP_BUFFER_MAX_POINTS`): best-effort ingest-path flush trigger when buffered points reaches threshold.
+- `APP_FLUSH_TRIGGER_BYTES` (default: `75%` of `APP_BUFFER_MAX_BYTES`): best-effort ingest-path flush trigger when buffered bytes reaches threshold.
 - `APP_READ_TIMEOUT_SECONDS` (default: `5`): HTTP read timeout in seconds.
 - `APP_WRITE_TIMEOUT_SECONDS` (default: `10`): HTTP write timeout in seconds.
 - `APP_IDLE_TIMEOUT_SECONDS` (default: `30`): HTTP idle timeout in seconds.
+
+Flush trigger policy:
+- periodic flush loop remains active (`APP_FLUSH_INTERVAL`).
+- after ingest appends to spool and enqueues RAM buffer, service checks buffer stats.
+- if points or bytes threshold is crossed, service issues a non-blocking best-effort flusher trigger.
+- request handlers still do not write directly to SQLite.
+- near-duplicates suppressed by RAM dedupe are retained as lightweight checkpoint-only markers so checkpoint can still advance through their spool sequence during normal runtime.
+- after successful SQLite commit and checkpoint advancement, service best-effort compacts fully committed spool segments.
 
 ## Database Migrations
 
@@ -149,5 +484,5 @@ SQLite pragmas applied by migration runner (Pi-friendly defaults):
 - Overland ingestion currently expects `locations[].coordinates` in `[lon, lat]` order.
   GeoJSON-style `geometry.coordinates` payloads are not yet supported and return 400.
 
-- Device API currently returns `api_key` in responses for ease of development and testing.
-  This should be hardened later so full keys are only shown at creation or rotation time.
+- Device API returns full `api_key` only on create/rotate responses.
+  List/read responses return masked `api_key_preview`.

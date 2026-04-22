@@ -2,6 +2,7 @@ package flusher
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -18,6 +19,10 @@ type CheckpointManager interface {
 	AdvanceCheckpoint(lastCommittedSeq uint64) (spool.Checkpoint, error)
 }
 
+type SpoolCompactor interface {
+	CompactCommittedSegments() (int, error)
+}
+
 type Buffer interface {
 	Enqueue(records []ingest.SpoolRecord) error
 	DrainBatch(maxPoints int) []ingest.SpoolRecord
@@ -26,15 +31,16 @@ type Buffer interface {
 }
 
 type Config struct {
-	FlushInterval time.Duration
+	FlushInterval  time.Duration
 	FlushBatchSize int
 }
 
 // LastFlushResult captures the most recent flush attempt outcome.
 type LastFlushResult struct {
-	AtUTC   time.Time
-	Success bool
-	Error   string
+	AtUTC            time.Time
+	LastSuccessAtUTC time.Time
+	Success          bool
+	Error            string
 }
 
 type Flusher struct {
@@ -53,6 +59,7 @@ type Flusher struct {
 	resultMu       sync.RWMutex
 	lastResult     LastFlushResult
 	lastResultSeen bool
+	lastSuccessAt  time.Time
 }
 
 func New(store Store, checkpoint CheckpointManager, buf Buffer, cfg Config) *Flusher {
@@ -181,19 +188,51 @@ func (f *Flusher) flushOneBatch() (bool, error) {
 		return false, nil
 	}
 
-	maxSeq, err := f.store.InsertSpoolBatch(batch)
-	if err != nil {
-		_ = f.buffer.RequeueFront(batch)
-		return false, err
+	writeBatch, maxSeq := splitWriteAndCheckpointBatch(batch)
+	if len(writeBatch) > 0 {
+		committedMaxSeq, err := f.store.InsertSpoolBatch(writeBatch)
+		if err != nil {
+			_ = f.buffer.RequeueFront(batch)
+			return false, err
+		}
+		if committedMaxSeq > maxSeq {
+			maxSeq = committedMaxSeq
+		}
 	}
 
 	if maxSeq > 0 {
 		if _, err := f.checkpoint.AdvanceCheckpoint(maxSeq); err != nil {
 			return false, err
 		}
+		f.compactCommittedSegmentsBestEffort()
 	}
 
 	return true, nil
+}
+
+func splitWriteAndCheckpointBatch(batch []ingest.SpoolRecord) ([]ingest.SpoolRecord, uint64) {
+	writeBatch := make([]ingest.SpoolRecord, 0, len(batch))
+	var maxSeq uint64
+	for _, record := range batch {
+		if record.Seq > maxSeq {
+			maxSeq = record.Seq
+		}
+		if record.CheckpointOnly {
+			continue
+		}
+		writeBatch = append(writeBatch, record)
+	}
+	return writeBatch, maxSeq
+}
+
+func (f *Flusher) compactCommittedSegmentsBestEffort() {
+	compactor, ok := f.checkpoint.(SpoolCompactor)
+	if !ok {
+		return
+	}
+	if _, err := compactor.CompactCommittedSegments(); err != nil {
+		log.Printf("flusher: compact committed segments failed: %v", err)
+	}
 }
 
 // LastFlushResult returns the latest flush attempt result and whether one exists.
@@ -204,16 +243,24 @@ func (f *Flusher) LastFlushResult() (LastFlushResult, bool) {
 }
 
 func (f *Flusher) recordFlushResult(err error) {
+	now := time.Now().UTC()
+
+	f.resultMu.Lock()
+	defer f.resultMu.Unlock()
+
+	if err == nil {
+		f.lastSuccessAt = now
+	}
+
 	result := LastFlushResult{
-		AtUTC:   time.Now().UTC(),
-		Success: err == nil,
+		AtUTC:            now,
+		LastSuccessAtUTC: f.lastSuccessAt,
+		Success:          err == nil,
 	}
 	if err != nil {
 		result.Error = err.Error()
 	}
 
-	f.resultMu.Lock()
-	defer f.resultMu.Unlock()
 	f.lastResult = result
 	f.lastResultSeen = true
 }
