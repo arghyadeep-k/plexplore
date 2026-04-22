@@ -1632,3 +1632,322 @@ Pending:
 Known issues:
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 - Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:55 - Phase 43 (Point History Query Endpoint)
+Implemented:
+- Added lightweight map-friendly point history endpoint: `GET /api/v1/points`.
+- Endpoint supports optional query params:
+- `from` (RFC3339)
+- `to` (RFC3339)
+- `device_id`
+- `limit`
+- Response shape remains compact using existing point projection fields:
+- `seq`
+- `device_id`
+- `source_type`
+- `timestamp_utc`
+- `lat`
+- `lon`
+- Added API query validation for invalid timestamps and invalid limit.
+- Added SQLite store query path for point history with:
+- optional range/device filtering
+- ascending timestamp/sequence ordering
+- bounded limit for low-memory behavior (default `500`, max `5000`)
+- Reused existing export filter model and existing response DTO patterns to keep implementation small and consistent.
+- Added tests:
+- API tests for default query, range filtering, device filtering, invalid query params
+- store test for ascending order + filters + limit behavior
+- Updated README with `/api/v1/points` usage and curl examples.
+
+Architectural decisions:
+- Decision: Add `ListPoints(...)` in store with SQL-level limit/filter/order rather than in-memory filtering.
+  Reason: Keeps endpoint Raspberry Pi friendly by bounding memory and avoiding unnecessary row materialization.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/points.go`
+- `internal/api/points_test.go`
+- `internal/store/points.go`
+- `internal/store/sqlite_store_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/health.go internal/api/points.go internal/api/points_test.go internal/store/points.go internal/store/sqlite_store_test.go`
+- `go test ./internal/api ./internal/store`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Continue auth hardening beyond current minimal single-user assumptions.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 14:58 - Phase 44 (Lightweight Map UI Page)
+Implemented:
+- Added new minimal map UI route: `GET /ui/map`.
+- Implemented map page with plain HTML/CSS/vanilla JS (no build tooling, no SPA framework).
+- Loaded Leaflet from CDN and OpenStreetMap tiles directly from browser.
+- Map page fetches backend point history via `GET /api/v1/points`.
+- Added simple filter controls:
+- `device_id`
+- `from`
+- `to`
+- `limit`
+- Render behavior:
+- draws track polyline from ordered points
+- adds lightweight point markers for smaller sets (<=500) to keep overhead low
+- Added focused UI test verifying `/ui/map`:
+- returns HTML successfully
+- includes expected map container structure
+- includes Leaflet references
+- Updated README Minimal Web UI section with map page route and behavior.
+
+Architectural decisions:
+- Decision: Use CDN Leaflet + existing `/api/v1/points` endpoint for map rendering instead of adding backend GIS/tile components.
+  Reason: Keeps implementation lightweight and Pi-friendly while delivering usable map visualization quickly.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Continue auth hardening beyond current minimal single-user assumptions.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 15:01 - Phase 45 (Map UI Date + Device Filtering)
+Implemented:
+- Extended map UI filters for date and device selection with lightweight controls:
+- date range inputs (`from` day / `to` day)
+- device dropdown (`/api/v1/devices`) when available
+- refresh button
+- Added sensible default range when no date filters are provided:
+- auto-populates last 7 days (UTC day boundaries)
+- Map query now translates day inputs to RFC3339 range (`T00:00:00Z` through `T23:59:59.999Z`).
+- Map reload and redraw behavior remains simple:
+- refresh clears old layers
+- re-fetches from `GET /api/v1/points`
+- redraws polyline and optional lightweight markers
+- Added practical UI test assertions to confirm map page contains:
+- device select control
+- date range inputs
+- refresh button text
+- Leaflet/map structure
+- Updated README map section with new filtering behavior and default range note.
+
+Architectural decisions:
+- Decision: Keep filtering logic in browser and reuse existing `/api/v1/points` + `/api/v1/devices` endpoints.
+  Reason: Avoids extra backend complexity and keeps UI responsive and low-overhead for Pi deployment.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(MapPageServedAtUIMap|StatusPageServedAtRoot)' -count=1`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Continue auth hardening beyond current minimal single-user assumptions.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 15:07 - Phase 46 (Lightweight Visit Detection)
+Implemented:
+- Added lightweight deterministic visit detection for stored points.
+- Added visit persistence schema migration:
+- `migrations/0003_visits.sql` with `visits` table and device/start index
+- Implemented small visit detector package:
+- configurable `MinDwell` and `MaxRadiusMeters`
+- deterministic centroid/radius window detection
+- no clustering dependencies, no heavy background services
+- Added store-side visit system methods:
+- `RebuildVisitsForDevice(ctx, deviceID, cfg)` to detect from stored points and rewrite visit rows for that device
+- `ListVisits(ctx, deviceID, limit)` to read persisted visits
+- Visit model stores required fields:
+- `id`
+- `device_id`
+- `start_at`
+- `end_at`
+- `centroid_lat`
+- `centroid_lon`
+- `point_count`
+- Added deterministic tests covering required scenarios against SQLite-backed stored points:
+- stationary points become a visit
+- moving points do not become visits
+- two separate visits are not merged
+- Updated README with short visit detection explanation.
+
+Architectural decisions:
+- Decision: Use a simple per-device rebuild pass over stored points with deterministic radius+dwell checks.
+  Reason: Keeps CPU/RAM/storage overhead low on Pi Zero 2 W while remaining correct and understandable.
+- Decision: Persist visits in a separate `visits` table linked to `devices`.
+  Reason: Keeps visit data queryable without changing raw point durability flow.
+
+Files changed:
+- `migrations/0003_visits.sql`
+- `internal/visits/detector.go`
+- `internal/store/visits.go`
+- `internal/store/visits_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/visits/detector.go internal/store/visits.go internal/store/visits_test.go`
+- `go test ./internal/store -run 'TestVisitDetection_' -count=1`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Decide when visit detection should run operationally (manual trigger vs scheduled/background pass) and expose it via a lightweight API/command.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 15:13 - Phase 47 (Visit Generation Workflow Integration)
+Implemented:
+- Integrated visit generation into application workflow via lightweight on-demand API.
+- Added visit routes:
+- `POST /api/v1/visits/generate`
+- `GET /api/v1/visits`
+- Generation endpoint behavior:
+- requires `device_id`
+- supports bounded optional `from`/`to` RFC3339 range
+- defaults to recent 14-day window when range is omitted
+- optional tuning params: `min_dwell` (duration), `max_radius_m` (meters)
+- Bounded generation implementation:
+- added `RebuildVisitsForDeviceRange(...)` in store
+- avoids full-history recomputation by operating on device + date window
+- rewrites only visits whose `start_at` is inside the target window
+- Kept existing full-device helper by delegating `RebuildVisitsForDevice(...)` to range method with nil bounds.
+- Added tests for workflow:
+- API tests for generate/list endpoints and invalid params
+- store range test proving bounded generation only persists visits from selected window
+- Wired store into server dependencies as `VisitStore`.
+- Updated README with explicit visit generation workflow and curl examples.
+
+Architectural decisions:
+- Decision: Use explicit on-demand endpoint as first workflow integration mechanism.
+  Reason: Keeps operations simple/observable while avoiding always-on background CPU usage on Pi.
+- Decision: Use bounded per-device window generation by default (14 days).
+  Reason: Reduces recomputation cost and keeps memory/CPU usage predictable.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/visits.go`
+- `internal/api/visits_test.go`
+- `internal/store/visits.go`
+- `internal/store/visits_test.go`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/health.go internal/api/visits.go internal/api/visits_test.go internal/store/visits.go internal/store/visits_test.go cmd/server/main.go`
+- `go test ./internal/api -run 'TestGenerateVisitsEndpoint_|TestListVisitsEndpoint' -count=1`
+- `go test ./internal/store -run 'TestVisitDetection_' -count=1`
+- `go test ./...`
+
+Pending:
+- Add targeted integration check that pressure-triggered ingest flush advances checkpoint without waiting for timer tick.
+- Harden checkpoint-failure path to preserve drained records safely (requeue strategy) without breaking current flow.
+- Consider lightweight scheduling trigger for visit generation (optional periodic maintenance) after on-demand workflow stabilizes.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Visit range generation rewrites visits by `start_at` window, so visits spanning window edges may be clipped by chosen range.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.
+
+### 2026-04-22 21:03 UTC - Phase 48 (Visits Listing Filters + Map Visits + UI Summary)
+Implemented:
+- Completed `codex_tasks.md` Tasks 1-3 sequentially and verified each stage.
+- Task 1: Expanded `GET /api/v1/visits` query support to include optional:
+- `device_id`
+- `from` (RFC3339)
+- `to` (RFC3339)
+- `limit`
+- Added `from <= to` validation on visits list endpoint.
+- Extended visit store listing query to apply optional time-range filters (`start_at` bounded by `from`/`to`) in SQL.
+- Added/updated tests for:
+- list endpoint with device + time range
+- invalid visit list params
+- store-level visit time-range filtering behavior
+- Task 2: Extended map UI to render visits:
+- loads visits from `/api/v1/visits` using selected device/date filters
+- draws lightweight centroid markers with visit popups (start/end/point_count/device)
+- keeps existing track/polyline rendering flow intact
+- adds graceful fallback message when no visits exist (or visits endpoint is unavailable)
+- Task 3: Added lightweight visits summary UI section:
+- small summary table below map
+- columns include start time, end time, duration, and device id
+- summary updates from the same visits API payload used for map markers
+- Added route/render test assertions for visits endpoint usage, visit layer hook, and summary section structure.
+- Updated README with:
+- filtered `GET /api/v1/visits` curl example (`from`/`to`)
+- map page note for visit marker rendering
+- map page note for visits summary table
+
+Architectural decisions:
+- Decision: Reuse existing `GET /api/v1/visits` for both map markers and summary table (single lightweight fetch path).
+  Reason: Keeps UI logic simple and low-overhead for Raspberry Pi Zero 2 W without extra endpoints or state layers.
+- Decision: Apply visit time filtering in SQLite query (`start_at` bounds) instead of post-filtering in API/UI.
+  Reason: Reduces response size and memory work on constrained hardware.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/visits.go`
+- `internal/api/visits_test.go`
+- `internal/store/visits.go`
+- `internal/store/visits_test.go`
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'Test(ListVisitsEndpoint|ListVisitsEndpoint_InvalidParams|GenerateVisitsEndpoint_)' -count=1`
+- `go test ./internal/store -run 'Test(VisitDetection_|ListVisits_FilterByTimeRange)' -count=1`
+- `go test ./internal/api -run 'TestMapPageServedAtUIMap|TestStatusPageServedAtRoot|TestListVisitsEndpoint|TestGenerateVisitsEndpoint_' -count=1`
+- `go test ./internal/api -count=1`
+- `go test ./internal/store -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Add API tests that exercise `GET /api/v1/visits` against real SQLite store via integration wiring (not only fake-store handler tests).
+- Consider adding optional `point_count` or duration filters to visits query if map dataset grows.
+- Continue durability hardening follow-up for checkpoint advancement failure requeue path in flusher.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+- Visit range generation rewrites visits by `start_at` window, so visits spanning window edges may be clipped by chosen range.
+- Device auth model remains single-user/minimal and should be hardened for multi-user scenarios.

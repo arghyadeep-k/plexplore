@@ -85,6 +85,7 @@ func main() {
 		FlushTriggerPoints: cfg.FlushTriggerPoints,
 		FlushTriggerBytes:  cfg.FlushTriggerBytes,
 		PointStore:         sqliteStore,
+		VisitStore:         sqliteStore,
 		SpoolDir:           cfg.SpoolDir,
 		SQLitePath:         cfg.SQLitePath,
 		IsDraining: func() bool {

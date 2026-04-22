@@ -80,6 +80,76 @@ JOIN devices d ON d.id = rp.device_id
 	return out, nil
 }
 
+func (s *SQLiteStore) ListPoints(ctx context.Context, filter ExportPointFilter, limit int) ([]RecentPoint, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	baseSQL := `
+SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+FROM raw_points rp
+JOIN devices d ON d.id = rp.device_id
+`
+
+	whereParts := make([]string, 0, 3)
+	args := make([]any, 0, 4)
+
+	device := strings.TrimSpace(filter.DeviceID)
+	if device != "" {
+		whereParts = append(whereParts, "d.name = ?")
+		args = append(args, device)
+	}
+	if filter.FromUTC != nil {
+		whereParts = append(whereParts, "rp.timestamp_utc >= ?")
+		args = append(args, filter.FromUTC.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.ToUTC != nil {
+		whereParts = append(whereParts, "rp.timestamp_utc <= ?")
+		args = append(args, filter.ToUTC.UTC().Format(time.RFC3339Nano))
+	}
+
+	if len(whereParts) > 0 {
+		baseSQL += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
+	}
+	baseSQL += "ORDER BY rp.timestamp_utc ASC, rp.seq ASC\nLIMIT ?;"
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, baseSQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list points: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]RecentPoint, 0)
+	for rows.Next() {
+		var point RecentPoint
+		var timestampRaw string
+		if err := rows.Scan(
+			&point.Seq,
+			&point.DeviceID,
+			&point.SourceType,
+			&timestampRaw,
+			&point.Lat,
+			&point.Lon,
+		); err != nil {
+			return nil, fmt.Errorf("scan point: %w", err)
+		}
+		parsed, parseErr := parseDBTime(timestampRaw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse point timestamp: %w", parseErr)
+		}
+		point.TimestampUTC = parsed
+		out = append(out, point)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate points: %w", err)
+	}
+	return out, nil
+}
+
 func (s *SQLiteStore) ListPointsForExport(ctx context.Context, filter ExportPointFilter) ([]RecentPoint, error) {
 	baseSQL := `
 SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon

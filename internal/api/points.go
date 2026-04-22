@@ -22,22 +22,46 @@ type recentPointsResponse struct {
 }
 
 func registerPointRoutes(mux *http.ServeMux, deps Dependencies) {
+	mux.HandleFunc("GET /api/v1/points", pointsHandler(deps.PointStore))
 	mux.HandleFunc("GET /api/v1/points/recent", recentPointsHandler(deps.PointStore))
+}
+
+func pointsHandler(pointStore PointStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filter, err := exportFilterFromRequest(r)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		limit, err := parseOptionalLimitParam(r, 500)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		points, err := pointStore.ListPoints(r.Context(), filter, limit)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		out := make([]recentPointResponse, 0, len(points))
+		for _, point := range points {
+			out = append(out, recentPointFromStore(point))
+		}
+		writeJSON(w, http.StatusOK, recentPointsResponse{Points: out})
+	}
 }
 
 func recentPointsHandler(pointStore PointStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 
-		limit := 50
-		limitParam := strings.TrimSpace(r.URL.Query().Get("limit"))
-		if limitParam != "" {
-			parsed, err := strconv.Atoi(limitParam)
-			if err != nil || parsed <= 0 {
-				writeJSONError(w, http.StatusBadRequest, "limit must be a positive integer")
-				return
-			}
-			limit = parsed
+		limit, err := parseOptionalLimitParam(r, 50)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		points, err := pointStore.ListRecentPoints(r.Context(), deviceID, limit)
@@ -60,6 +84,28 @@ func recentPointsHandler(pointStore PointStore) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, recentPointsResponse{Points: out})
 	}
+}
+
+func parseOptionalLimitParam(r *http.Request, fallback int) (int, error) {
+	limit := fallback
+	limitParam := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if limitParam == "" {
+		return limit, nil
+	}
+
+	parsed, err := strconv.Atoi(limitParam)
+	if err != nil || parsed <= 0 {
+		return 0, &invalidLimitParamError{value: limitParam}
+	}
+	return parsed, nil
+}
+
+type invalidLimitParamError struct {
+	value string
+}
+
+func (e *invalidLimitParamError) Error() string {
+	return "limit must be a positive integer: " + e.value
 }
 
 func recentPointFromStore(point store.RecentPoint) recentPointResponse {

@@ -298,3 +298,45 @@ func TestSQLiteStore_ListPointsForExport_WithFilters(t *testing.T) {
 		t.Fatalf("unexpected filtered export point: %+v", points[0])
 	}
 }
+
+func TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+
+	records := []ingest.SpoolRecord{
+		testSpoolRecord(1, "d1", "hash-list-1", base),
+		testSpoolRecord(2, "d1", "hash-list-2", base.Add(30*time.Minute)),
+		testSpoolRecord(3, "d2", "hash-list-3", base.Add(60*time.Minute)),
+	}
+	if _, err := s.InsertSpoolBatch(records); err != nil {
+		t.Fatalf("InsertSpoolBatch failed: %v", err)
+	}
+
+	from := base.Add(10 * time.Minute)
+	to := base.Add(70 * time.Minute)
+	points, err := s.ListPoints(context.Background(), ExportPointFilter{
+		DeviceID: "d1",
+		FromUTC:  &from,
+		ToUTC:    &to,
+	}, 10)
+	if err != nil {
+		t.Fatalf("ListPoints failed: %v", err)
+	}
+	if len(points) != 1 {
+		t.Fatalf("expected 1 filtered point, got %d", len(points))
+	}
+	if points[0].Seq != 2 || points[0].DeviceID != "d1" {
+		t.Fatalf("unexpected point %+v", points[0])
+	}
+
+	all, err := s.ListPoints(context.Background(), ExportPointFilter{}, 2)
+	if err != nil {
+		t.Fatalf("ListPoints all failed: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected limit 2, got %d", len(all))
+	}
+	if all[0].Seq != 1 || all[1].Seq != 2 {
+		t.Fatalf("expected ascending seq order [1,2], got %+v", all)
+	}
+}

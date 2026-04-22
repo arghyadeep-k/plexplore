@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"plexplore/internal/buffer"
 	"plexplore/internal/flusher"
 	"plexplore/internal/ingest"
 	"plexplore/internal/spool"
 	"plexplore/internal/store"
+	"plexplore/internal/visits"
 )
 
 type healthResponse struct {
@@ -43,7 +45,13 @@ type FlushTrigger interface {
 
 type PointStore interface {
 	ListRecentPoints(rctx context.Context, deviceID string, limit int) ([]store.RecentPoint, error)
+	ListPoints(rctx context.Context, filter store.ExportPointFilter, limit int) ([]store.RecentPoint, error)
 	ListPointsForExport(rctx context.Context, filter store.ExportPointFilter) ([]store.RecentPoint, error)
+}
+
+type VisitStore interface {
+	RebuildVisitsForDeviceRange(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error)
+	ListVisits(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, limit int) ([]store.Visit, error)
 }
 
 type Dependencies struct {
@@ -55,6 +63,7 @@ type Dependencies struct {
 	FlushTriggerPoints int
 	FlushTriggerBytes  int
 	PointStore         PointStore
+	VisitStore         VisitStore
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
@@ -79,6 +88,9 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 	if deps.PointStore != nil {
 		registerPointRoutes(mux, deps)
 		registerExportRoutes(mux, deps)
+	}
+	if deps.VisitStore != nil {
+		registerVisitRoutes(mux, deps.VisitStore)
 	}
 }
 

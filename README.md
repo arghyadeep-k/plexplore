@@ -204,6 +204,80 @@ curl -sS "http://localhost:8080/api/v1/points/recent"
 curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=20"
 ```
 
+## Point History (Map-Friendly)
+
+- `GET /api/v1/points` returns stored points in ascending timestamp order.
+- optional query params:
+- `from` (RFC3339 timestamp)
+- `to` (RFC3339 timestamp)
+- `device_id` (device name)
+- `limit` (default `500`, max `5000`)
+
+Response fields:
+- `seq`
+- `device_id`
+- `source_type`
+- `timestamp_utc`
+- `lat`
+- `lon`
+
+Examples:
+
+```bash
+# default point history query
+curl -sS "http://localhost:8080/api/v1/points"
+
+# filtered point history for map view
+curl -sS "http://localhost:8080/api/v1/points?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"
+```
+
+## Visit Detection (Lightweight)
+
+Visit detection is implemented as a deterministic pass over stored points per
+device:
+- points must remain within a configurable max radius
+- dwell time between first and last point in the candidate window must meet a
+  configurable minimum
+
+Current persistence model stores visits with:
+- `id`
+- `device_id`
+- `start_at`
+- `end_at`
+- `centroid_lat`
+- `centroid_lon`
+- `point_count`
+
+Implementation is intentionally simple (no clustering libraries) for Raspberry
+Pi-friendly resource usage.
+
+Visit generation workflow:
+- visits are generated on-demand via `POST /api/v1/visits/generate`
+- requires `device_id`
+- supports bounded window with optional `from` / `to` RFC3339 params
+- if `from` / `to` are omitted, generation defaults to a recent 14-day window
+- generated visits can be listed via `GET /api/v1/visits` with optional
+  `device_id`, `from`, `to`, and `limit` filters
+- optional tuning params:
+- `min_dwell` (duration, default `15m`)
+- `max_radius_m` (meters, default `35`)
+
+Examples:
+
+```bash
+# generate visits for a device in the default recent window
+curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=phone-main"
+
+# generate visits for a bounded range
+curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&min_dwell=20m&max_radius_m=40"
+
+# list generated visits
+curl -sS "http://localhost:8080/api/v1/visits?device_id=phone-main&limit=100"
+
+# list visits for a bounded range
+curl -sS "http://localhost:8080/api/v1/visits?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&limit=100"
+```
+
 ## GeoJSON Export
 
 - `GET /api/v1/exports/geojson` returns stored points as GeoJSON FeatureCollection.
@@ -300,6 +374,7 @@ Notes:
 
 - `GET /` serves a lightweight status page.
 - `GET /ui/status` serves the same page explicitly.
+- `GET /ui/map` serves a lightweight map page.
 
 The page is intentionally minimal (plain HTML/CSS/vanilla JS, no SPA build
 toolchain) and is served directly by the Go HTTP server. It reads existing JSON
@@ -310,6 +385,16 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - spool/checkpoint status
 - last flush status
 - recent points preview
+
+Map page notes:
+- uses Leaflet (CDN-loaded) with OpenStreetMap tiles
+- fetches track points from `GET /api/v1/points`
+- renders an ordered track polyline
+- renders lightweight point markers for smaller result sets
+- renders lightweight visit centroid markers from `/api/v1/visits` with popup details
+- includes a small visits summary table (start, end, duration, device) below the map
+- supports filtering by device and date range (`from`/`to` day inputs)
+- defaults to a recent 7-day range when no date filters are set
 
 ## Raspberry Pi Deployment (systemd)
 
