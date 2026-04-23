@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"plexplore/internal/store"
@@ -67,7 +68,15 @@ func RequireUserSessionAuth(next http.Handler) http.Handler {
 func RequireUserSessionAuthHTML(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := CurrentUserFromContext(r.Context()); !ok {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			redirectPath := "/login"
+			if currentPath := strings.TrimSpace(r.URL.Path); currentPath != "" {
+				nextValue := currentPath
+				if strings.TrimSpace(r.URL.RawQuery) != "" {
+					nextValue += "?" + r.URL.RawQuery
+				}
+				redirectPath = "/login?next=" + url.QueryEscape(nextValue)
+			}
+			http.Redirect(w, r, redirectPath, http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)

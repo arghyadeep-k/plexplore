@@ -139,8 +139,8 @@ func TestUIRoutesRequireSession_WhenSessionDepsProvided(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect for anonymous ui request, got %d", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/login" {
-		t.Fatalf("expected redirect location /login, got %q", got)
+	if got := rec.Header().Get("Location"); got != "/login?next=%2Fui%2Fstatus" {
+		t.Fatalf("expected redirect location with next to /login?next=..., got %q", got)
 	}
 }
 

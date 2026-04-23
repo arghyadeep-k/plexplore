@@ -79,6 +79,7 @@ const loginPageHTML = `<!doctype html>
     <h1>Sign In</h1>
     __ERROR_BLOCK__
     <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+    <input type="hidden" name="next" value="__NEXT_VALUE__">
     <label>Email
       <input type="email" name="email" value="__EMAIL_VALUE__" required autocomplete="username">
     </label>
@@ -99,7 +100,7 @@ func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore S
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	writeLoginPage(w, r, http.StatusOK, "", "")
+	writeLoginPage(w, r, http.StatusOK, "", "", strings.TrimSpace(r.URL.Query().Get("next")))
 }
 
 func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFunc {
@@ -110,17 +111,17 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusForbidden, "csrf token invalid")
 				return
 			}
-			writeLoginPage(w, r, http.StatusForbidden, "", "Session expired. Please try again.")
+			writeLoginPage(w, r, http.StatusForbidden, "", "Session expired. Please try again.", strings.TrimSpace(r.FormValue("next")))
 			return
 		}
 
-		email, password, err := parseLoginCredentials(r, jsonRequest)
+		email, password, nextPath, err := parseLoginCredentials(r, jsonRequest)
 		if err != nil {
 			if jsonRequest {
 				writeJSONError(w, http.StatusBadRequest, "invalid login form")
 				return
 			}
-			writeLoginPage(w, r, http.StatusBadRequest, "", "Invalid login request.")
+			writeLoginPage(w, r, http.StatusBadRequest, "", "Invalid login request.", strings.TrimSpace(r.URL.Query().Get("next")))
 			return
 		}
 		if email == "" || password == "" {
@@ -128,7 +129,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusBadRequest, "email and password are required")
 				return
 			}
-			writeLoginPage(w, r, http.StatusBadRequest, email, "Email and password are required.")
+			writeLoginPage(w, r, http.StatusBadRequest, email, "Email and password are required.", nextPath)
 			return
 		}
 
@@ -139,14 +140,14 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 					writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
 					return
 				}
-				writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password")
+				writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath)
 				return
 			}
 			if jsonRequest {
 				writeJSONError(w, http.StatusInternalServerError, "user lookup failed")
 				return
 			}
-			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.")
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath)
 			return
 		}
 		if !VerifyPassword(user.PasswordHash, password) {
@@ -154,7 +155,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
 				return
 			}
-			writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password")
+			writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath)
 			return
 		}
 
@@ -164,7 +165,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusInternalServerError, "session creation failed")
 				return
 			}
-			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.")
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -175,11 +176,11 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 			SameSite: http.SameSiteLaxMode,
 			Expires:  session.ExpiresAt.UTC(),
 		})
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, resolvePostLoginRedirect(nextPath), http.StatusSeeOther)
 	}
 }
 
-func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, errorMessage string) {
+func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, errorMessage, nextPath string) {
 	csrfToken := ensureCSRFCookie(w, r)
 	errorBlock := ""
 	if strings.TrimSpace(errorMessage) != "" {
@@ -187,34 +188,49 @@ func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, e
 	}
 	page := strings.ReplaceAll(loginPageHTML, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
 	page = strings.ReplaceAll(page, "__EMAIL_VALUE__", html.EscapeString(strings.TrimSpace(email)))
+	page = strings.ReplaceAll(page, "__NEXT_VALUE__", html.EscapeString(strings.TrimSpace(nextPath)))
 	page = strings.ReplaceAll(page, "__ERROR_BLOCK__", errorBlock)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, page)
 }
 
-func parseLoginCredentials(r *http.Request, jsonRequest bool) (string, string, error) {
+func parseLoginCredentials(r *http.Request, jsonRequest bool) (string, string, string, error) {
 	if jsonRequest {
 		var payload struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
-		return strings.TrimSpace(payload.Email), strings.TrimSpace(payload.Password), nil
+		return strings.TrimSpace(payload.Email), strings.TrimSpace(payload.Password), strings.TrimSpace(r.URL.Query().Get("next")), nil
 	}
 
 	if err := r.ParseForm(); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("password")), nil
+	return strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("password")), strings.TrimSpace(r.FormValue("next")), nil
 }
 
 func isJSONLoginRequest(r *http.Request) bool {
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 	accept := strings.ToLower(strings.TrimSpace(r.Header.Get("Accept")))
 	return strings.Contains(contentType, "application/json") || strings.Contains(accept, "application/json")
+}
+
+func resolvePostLoginRedirect(nextPath string) string {
+	candidate := strings.TrimSpace(nextPath)
+	if candidate == "" {
+		return "/ui/map"
+	}
+	if !strings.HasPrefix(candidate, "/") || strings.HasPrefix(candidate, "//") {
+		return "/ui/map"
+	}
+	if strings.HasPrefix(candidate, "/login") {
+		return "/ui/map"
+	}
+	return candidate
 }
 
 func logoutHandler(sessionStore SessionStore) http.HandlerFunc {

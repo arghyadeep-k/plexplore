@@ -126,6 +126,9 @@ func TestLoginSuccessSetsSessionCookie(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	if got := rec.Header().Get("Location"); got != "/ui/map" {
+		t.Fatalf("expected redirect to /ui/map, got %q", got)
+	}
 	if len(sessionStore.created) != 1 {
 		t.Fatalf("expected one created session, got %d", len(sessionStore.created))
 	}
@@ -233,6 +236,50 @@ func TestLoginInvalidCredentials_JSONStillReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestLoginSuccess_WithNextParamRedirectsToRequestedPage(t *testing.T) {
+	hash, err := HashPassword("test-pass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+
+	userStore := &fakeAuthUserStore{
+		byEmail: map[string]store.User{
+			"admin@example.com": {
+				ID:           7,
+				Email:        "admin@example.com",
+				PasswordHash: hash,
+			},
+		},
+	}
+	sessionStore := &fakeAuthSessionStore{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+	})
+
+	csrfToken, csrfCookie := fetchLoginCSRFAtPath(t, mux, "/login?next=/ui/status")
+
+	form := url.Values{}
+	form.Set("email", "admin@example.com")
+	form.Set("password", "test-pass")
+	form.Set("csrf_token", csrfToken)
+	form.Set("next", "/ui/status")
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(csrfCookie)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/ui/status" {
+		t.Fatalf("expected redirect to /ui/status from next param, got %q", got)
+	}
+}
+
 func TestLogoutClearsSession(t *testing.T) {
 	sessionStore := &fakeAuthSessionStore{}
 	mux := http.NewServeMux()
@@ -301,13 +348,17 @@ func TestLoginRejectsMissingCSRFToken(t *testing.T) {
 }
 
 func fetchLoginCSRF(t *testing.T, mux *http.ServeMux) (string, *http.Cookie) {
+	return fetchLoginCSRFAtPath(t, mux, "/login")
+}
+
+func fetchLoginCSRFAtPath(t *testing.T, mux *http.ServeMux, path string) (string, *http.Cookie) {
 	t.Helper()
 
-	getReq := httptest.NewRequest(http.MethodGet, "/login", nil)
+	getReq := httptest.NewRequest(http.MethodGet, path, nil)
 	getRec := httptest.NewRecorder()
 	mux.ServeHTTP(getRec, getReq)
 	if getRec.Code != http.StatusOK {
-		t.Fatalf("GET /login expected 200, got %d", getRec.Code)
+		t.Fatalf("GET %s expected 200, got %d", path, getRec.Code)
 	}
 
 	var csrfCookie *http.Cookie

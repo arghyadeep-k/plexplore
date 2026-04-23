@@ -2986,3 +2986,42 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 05:38 UTC - Phase 70 (Post-Login Redirect Default To Map)
+Implemented:
+- Changed successful browser login default redirect target from status/root to map page:
+- now defaults to `GET /ui/map`
+- Added lightweight safe `next` redirect support:
+- unauthenticated HTML route middleware now redirects to `/login?next=<original_path>`
+- successful login uses `next` when present and safe
+- unsafe/looping targets (for example external URLs or `/login`) are ignored and fall back to `/ui/map`
+- Kept failed-login inline HTML behavior and JSON/API invalid-login behavior unchanged.
+- Updated tests:
+- success login default redirect now asserts `/ui/map`
+- added test for `next` precedence (`/ui/status`)
+- updated HTML auth redirect tests to assert `next` query preservation.
+
+Architectural decisions:
+- Decision: Support only same-origin absolute-path `next` values for post-login redirects.
+  Reason: Avoid open redirects and redirect loops while preserving protected-page return flow.
+
+Files changed:
+- `internal/api/login.go`
+- `internal/api/login_test.go`
+- `internal/api/session_auth.go`
+- `internal/api/session_auth_test.go`
+- `internal/api/ui_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/login.go internal/api/login_test.go internal/api/session_auth.go internal/api/session_auth_test.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LoginInvalidCredentials_JSONStillReturnsJSON|LoginSuccess_WithNextParamRedirectsToRequestedPage|LogoutClearsSession|LoginRejectsMissingCSRFToken|RequireUserSessionAuthHTML_RedirectWhenAnonymous|UIRoutesRequireSession_WhenSessionDepsProvided)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Manual browser validation on deployment target for full login -> map and protected-route return flow.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

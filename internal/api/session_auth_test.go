@@ -132,7 +132,7 @@ func TestRequireUserSessionAuthHTML_RedirectWhenAnonymous(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 for anonymous HTML route, got %d", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/login" {
-		t.Fatalf("expected redirect to /login, got %q", got)
+	if got := rec.Header().Get("Location"); got != "/login?next=%2Fui%2Fstatus" {
+		t.Fatalf("expected redirect with next to /login?next=..., got %q", got)
 	}
 }
