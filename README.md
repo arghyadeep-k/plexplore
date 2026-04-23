@@ -43,6 +43,13 @@ Expected response:
 - `GET /api/v1/devices/{id}` returns one device.
 - `POST /api/v1/devices/{id}/rotate-key` rotates device API key.
 
+Session auth and scoping:
+- these device management routes require a signed-in user session
+- list/read only return devices owned by the current signed-in user
+- rotate key is denied for non-owner devices
+- create associates the device to the current signed-in user by default
+- admin users may create devices for another user by supplying `user_id` in create request
+
 Device API key hygiene:
 - create and rotate responses include full `api_key` once
 - list/read responses return only `api_key_preview` (masked)
@@ -73,6 +80,111 @@ If `user_id` is omitted, device creation defaults to user `1` (`default` user).
 API key auth helper is available in `internal/api/auth.go` and is intended to be
 applied to ingest endpoints as they are added.
 
+## Multi-User Auth Foundation (In Progress)
+
+Account-auth schema foundations are now present in SQLite (admin-created users,
+no public signup flow yet):
+- `users.email` (unique for non-empty values)
+- `users.password_hash`
+- `users.is_admin`
+- `users.created_at`
+- `users.updated_at`
+
+Store-layer methods now available in `internal/store/users.go`:
+- `CreateUser(...)`
+- `GetUserByEmail(...)`
+- `GetUserByID(...)`
+- `ListUsers(...)`
+
+Password helper functions are now available in `internal/api/password.go`:
+- `HashPassword(plain string) (string, error)`
+- `VerifyPassword(hash, plain string) bool`
+
+Helpers reject empty passwords and use bcrypt hashes.
+
+This phase adds schema/store building blocks only. Login/session/admin
+management endpoints are added in later tasks.
+
+## Admin Bootstrap (No Public Signup)
+
+Public self-signup is not enabled. Bootstrap admin creation is done explicitly
+via CLI mode on the migrate command:
+
+```bash
+go run ./cmd/migrate --create-admin \
+  --email admin@example.com \
+  --password 'testpass'
+```
+
+Optional flags:
+- `--db` (default from `APP_SQLITE_PATH` or `./data/plexplore.db`)
+- `--migrations` (default from `APP_MIGRATIONS_DIR` or `./migrations`)
+- `--is-admin` (must be `true` for this bootstrap mode)
+
+Behavior:
+- runs migrations first
+- prevents duplicate admin creation for the same email
+- stores password as bcrypt hash (not plaintext)
+
+## Session Foundation (In Progress)
+
+Session storage and loading primitives are now available:
+- SQLite table: `sessions` (token, user_id, expires_at, created_at)
+- Store methods in `internal/store/sessions.go`:
+- `CreateSession(userID)`
+- `GetSession(token)` (expired sessions are treated as missing)
+- `DeleteSession(token)`
+- Middleware helper in `internal/api/session_auth.go`:
+- `LoadCurrentUserFromSession(...)`
+- `CurrentUserFromContext(...)`
+- `RequireUserSessionAuth(...)` (JSON 401 for anonymous)
+- `RequireUserSessionAuthHTML(...)` (redirects anonymous to `/login`)
+
+Device API key auth for ingest remains separate and unchanged.
+
+## Login / Logout (Admin-Created Users)
+
+Endpoints:
+- `GET /login`
+- `POST /login`
+- `POST /logout`
+
+Behavior:
+- no public signup
+- login checks email + password hash and issues HttpOnly session cookie (`plexplore_session`)
+- login/logout now require CSRF token validation (`plexplore_csrf` cookie + request token)
+- logout deletes session and expires cookie
+- protected HTML UI routes (`/`, `/ui/status`, `/ui/map`) require session and redirect to `/login` when anonymous
+
+Example login request:
+
+```bash
+curl -X POST http://127.0.0.1:8080/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "email=admin@example.com&password=testpass" -i
+```
+
+## Admin User Management API
+
+Admin-only endpoints (session auth required):
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+
+Behavior:
+- unauthenticated requests receive `401`
+- non-admin authenticated requests receive `403`
+- admin `POST /api/v1/users` requires CSRF token (`X-CSRF-Token` header matching `plexplore_csrf` cookie)
+- responses do not expose `password_hash`
+
+Example create request (admin session cookie required):
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/users \
+  -H "Content-Type: application/json" \
+  -H "Cookie: plexplore_session=<admin-session-token>" \
+  -d '{"email":"user2@example.com","password":"user2pass","is_admin":false}'
+```
+
 ## Ingestion Endpoints
 
 - `POST /api/v1/owntracks`
@@ -82,6 +194,9 @@ Both endpoints require device API key auth via `X-API-Key` (or
 `Authorization: Bearer <api_key>`). Request handling flow is:
 parse payload -> canonical points -> ensure ingest hash -> append spool ->
 enqueue RAM buffer. Handlers do not write directly to SQLite.
+In multi-user mode, ingest remains API-key based (no browser session required),
+and persisted rows are attributed to the owning user/device resolved from that
+API key.
 
 ## Connect OwnTracks
 
@@ -190,6 +305,8 @@ Included fields (when available):
 ## Recent Points (Debug)
 
 - `GET /api/v1/points/recent` returns compact recent stored points from SQLite.
+- requires signed-in user session
+- results are scoped to current user's devices only
 - query params:
 - `device_id` (optional): device name filter
 - `limit` (optional): max rows (default `50`, max `500`)
@@ -207,6 +324,9 @@ curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=
 ## Point History (Map-Friendly)
 
 - `GET /api/v1/points` returns stored points in ascending timestamp order.
+- requires signed-in user session
+- results are scoped to current user's devices only
+- user scoping is enforced by persisted ownership IDs, so same device names across users remain isolated
 - optional query params:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
@@ -259,11 +379,14 @@ Pi-friendly resource usage.
 
 Visit generation workflow:
 - visits are generated on-demand via `POST /api/v1/visits/generate`
+- endpoints require signed-in user session
+- generate accepts only devices owned by current user
 - requires `device_id`
 - supports bounded window with optional `from` / `to` RFC3339 params
 - if `from` / `to` are omitted, generation defaults to a recent 14-day window
 - generated visits can be listed via `GET /api/v1/visits` with optional
   `device_id`, `from`, `to`, and `limit` filters
+- visit list results are scoped to current user's devices only
 - optional tuning params:
 - `min_dwell` (duration, default `15m`)
 - `max_radius_m` (meters, default `35`)
@@ -287,6 +410,9 @@ curl -sS "http://localhost:8080/api/v1/visits?device_id=phone-main&from=2026-04-
 ## GeoJSON Export
 
 - `GET /api/v1/exports/geojson` returns stored points as GeoJSON FeatureCollection.
+- requires signed-in user session
+- exports only include current user's devices/points
+- user scoping is enforced by persisted ownership IDs, even when device names overlap across users
 - optional filters:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
@@ -305,6 +431,9 @@ curl -sS "http://localhost:8080/api/v1/exports/geojson?device_id=phone-main&from
 ## GPX Export
 
 - `GET /api/v1/exports/gpx` returns stored points as GPX 1.1.
+- requires signed-in user session
+- exports only include current user's devices/points
+- user scoping is enforced by persisted ownership IDs, even when device names overlap across users
 - optional filters:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
@@ -392,6 +521,9 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - last flush status
 - recent points preview
 - dark mode toggle (sun/moon) with localStorage persistence and system-preference fallback
+- signed-in user email indicator and logout control in the top bar (session-aware UI)
+- admin-only user management page at `GET /ui/admin/users` for listing users and creating admin-created accounts
+- logout actions in UI pages include CSRF hidden token fields
 
 Map page notes:
 - uses Leaflet (CDN-loaded) with OpenStreetMap tiles
@@ -403,6 +535,26 @@ Map page notes:
 - supports filtering by device and date range (`from`/`to` day inputs)
 - defaults to a recent 7-day range when no date filters are set
 - includes the same dark mode toggle with saved preference behavior
+
+Admin users page notes:
+- route: `GET /ui/admin/users` (admin session required)
+- lists users via `GET /api/v1/users`
+- creates users via `POST /api/v1/users`
+- creates users with CSRF header (`X-CSRF-Token`) derived from current UI session
+- no public self-signup is introduced
+
+## Security Hardening Notes
+
+- Session cookie:
+- name: `plexplore_session`
+- attributes: `HttpOnly`, `SameSite=Lax`, path `/`, server-side expiration
+- CSRF cookie:
+- name: `plexplore_csrf`
+- attributes: `SameSite=Lax`, path `/` (readable by UI JS for lightweight fetch protection)
+- CSRF validation is enforced on:
+- `POST /login`
+- `POST /logout`
+- `POST /api/v1/users`
 
 ## Raspberry Pi Deployment (systemd)
 

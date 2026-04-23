@@ -247,3 +247,144 @@ func TestRequireDeviceAPIKeyAuth_DeviceLookupError(t *testing.T) {
 		t.Fatalf("expected 500 on lookup error, got %d", rec.Code)
 	}
 }
+
+func TestDevicesAPI_UserSeesOnlyOwnDevices_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u10-phone", SourceType: "owntracks", APIKey: "k10", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u11-phone", SourceType: "owntracks", APIKey: "k11", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-u10": {Token: "token-u10", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp listDevicesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal list response failed: %v", err)
+	}
+	if len(resp.Devices) != 1 || resp.Devices[0].ID != 1 {
+		t.Fatalf("expected only user-owned device, got %+v", resp.Devices)
+	}
+}
+
+func TestDevicesAPI_UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u10-phone", SourceType: "owntracks", APIKey: "k10", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u11-phone", SourceType: "owntracks", APIKey: "k11", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-u10": {Token: "token-u10", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices/2", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-owned device read, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 11, Name: "u11-phone", SourceType: "owntracks", APIKey: "k11", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-u10": {Token: "token-u10", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{"api_key":"new-key"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-owner key rotation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDevicesAPI_CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com", IsAdmin: false}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-u10": {Token: "token-u10", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"user_id":999,"name":"phone","source_type":"owntracks","api_key":"k10"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.devices) != 0 {
+		t.Fatalf("expected no device created, got %d", len(ds.devices))
+	}
+}
+
+func TestDevicesAPI_AdminCanCreateForSpecificUser_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore: &fakeUserStore{users: map[int64]store.User{
+			1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+			2: {ID: 2, Email: "user2@example.com", IsAdmin: false},
+		}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-admin": {Token: "token-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"user_id":2,"name":"u2-phone-admin-created","source_type":"owntracks","api_key":"u2-admin-key"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-admin"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.devices) != 1 {
+		t.Fatalf("expected one created device, got %d", len(ds.devices))
+	}
+	if ds.devices[0].UserID != 2 {
+		t.Fatalf("expected admin override user_id=2, got %d", ds.devices[0].UserID)
+	}
+}

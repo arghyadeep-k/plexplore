@@ -26,22 +26,71 @@ type geoJSONGeometry struct {
 }
 
 func registerExportRoutes(mux *http.ServeMux, deps Dependencies) {
-	mux.HandleFunc("GET /api/v1/exports/geojson", geoJSONExportHandler(deps.PointStore))
-	mux.HandleFunc("GET /api/v1/exports/gpx", gpxExportHandler(deps.PointStore))
+	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
+		mux.Handle(
+			"GET /api/v1/exports/geojson",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(geoJSONExportHandler(deps.PointStore, deps.DeviceStore))),
+			),
+		)
+		mux.Handle(
+			"GET /api/v1/exports/gpx",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(gpxExportHandler(deps.PointStore, deps.DeviceStore))),
+			),
+		)
+		return
+	}
+	mux.HandleFunc("GET /api/v1/exports/geojson", geoJSONExportHandler(deps.PointStore, nil))
+	mux.HandleFunc("GET /api/v1/exports/gpx", gpxExportHandler(deps.PointStore, nil))
 }
 
-func geoJSONExportHandler(pointStore PointStore) http.HandlerFunc {
+func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filter, err := exportFilterFromRequest(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		allowedDeviceIDs := map[string]struct{}{}
+		currentUserID := int64(0)
+		if deviceStore != nil {
+			currentUser, ok := CurrentUserFromContext(r.Context())
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			currentUserID = currentUser.ID
+			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if filter.DeviceID != "" {
+				if _, ok := allowedDeviceIDs[filter.DeviceID]; !ok {
+					writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
+					return
+				}
+			}
+		}
 
 		points, err := pointStore.ListPointsForExport(r.Context(), filter)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if deviceStore != nil {
+			filtered := make([]store.RecentPoint, 0, len(points))
+			for _, point := range points {
+				if _, ok := allowedDeviceIDs[point.DeviceID]; ok && point.UserID == currentUserID {
+					filtered = append(filtered, point)
+				}
+			}
+			points = filtered
 		}
 
 		features := make([]geoJSONFeature, 0, len(points))
@@ -132,18 +181,48 @@ type gpxTrackPt struct {
 	Time string  `xml:"time"`
 }
 
-func gpxExportHandler(pointStore PointStore) http.HandlerFunc {
+func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filter, err := exportFilterFromRequest(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		allowedDeviceIDs := map[string]struct{}{}
+		currentUserID := int64(0)
+		if deviceStore != nil {
+			currentUser, ok := CurrentUserFromContext(r.Context())
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			currentUserID = currentUser.ID
+			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if filter.DeviceID != "" {
+				if _, ok := allowedDeviceIDs[filter.DeviceID]; !ok {
+					writeEmptyGPX(w)
+					return
+				}
+			}
+		}
 
 		points, err := pointStore.ListPointsForExport(r.Context(), filter)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if deviceStore != nil {
+			filtered := make([]store.RecentPoint, 0, len(points))
+			for _, point := range points {
+				if _, ok := allowedDeviceIDs[point.DeviceID]; ok && point.UserID == currentUserID {
+					filtered = append(filtered, point)
+				}
+			}
+			points = filtered
 		}
 
 		trackPoints := make([]gpxTrackPt, 0, len(points))
@@ -167,15 +246,30 @@ func gpxExportHandler(pointStore PointStore) http.HandlerFunc {
 			},
 		}
 
-		output, err := xml.MarshalIndent(doc, "", "  ")
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "failed to encode gpx")
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/gpx+xml")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(xml.Header))
-		_, _ = w.Write(output)
+		writeGPXDoc(w, doc)
 	}
+}
+
+func writeEmptyGPX(w http.ResponseWriter) {
+	writeGPXDoc(w, gpxDocument{
+		Version: "1.1",
+		Creator: "plexplore",
+		XMLNS:   "http://www.topografix.com/GPX/1/1",
+		Track: gpxTrack{
+			Name: "plexplore-export",
+		},
+	})
+}
+
+func writeGPXDoc(w http.ResponseWriter, doc gpxDocument) {
+	output, err := xml.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to encode gpx")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/gpx+xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write(output)
 }

@@ -53,6 +53,25 @@ type listDevicesResponse struct {
 }
 
 func registerDeviceRoutes(mux *http.ServeMux, deviceStore DeviceStore) {
+	registerDeviceRoutesWithAuth(mux, deviceStore, nil, nil)
+}
+
+func registerDeviceRoutesWithAuth(mux *http.ServeMux, deviceStore DeviceStore, userStore UserStore, sessionStore SessionStore) {
+	if userStore != nil && sessionStore != nil {
+		withSessionAuth := func(next http.Handler) http.Handler {
+			return LoadCurrentUserFromSession(
+				sessionStore,
+				userStore,
+				RequireUserSessionAuth(next),
+			)
+		}
+		mux.Handle("POST /api/v1/devices", withSessionAuth(http.HandlerFunc(createDeviceHandler(deviceStore))))
+		mux.Handle("GET /api/v1/devices", withSessionAuth(http.HandlerFunc(listDevicesHandler(deviceStore))))
+		mux.Handle("GET /api/v1/devices/{id}", withSessionAuth(http.HandlerFunc(getDeviceHandler(deviceStore))))
+		mux.Handle("POST /api/v1/devices/{id}/rotate-key", withSessionAuth(http.HandlerFunc(rotateDeviceKeyHandler(deviceStore))))
+		return
+	}
+
 	mux.HandleFunc("POST /api/v1/devices", createDeviceHandler(deviceStore))
 	mux.HandleFunc("GET /api/v1/devices", listDevicesHandler(deviceStore))
 	mux.HandleFunc("GET /api/v1/devices/{id}", getDeviceHandler(deviceStore))
@@ -61,6 +80,8 @@ func registerDeviceRoutes(mux *http.ServeMux, deviceStore DeviceStore) {
 
 func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
+
 		var req createDeviceRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
@@ -83,8 +104,21 @@ func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 			apiKey = generated
 		}
 
+		userID := req.UserID
+		if hasCurrentUser {
+			userID = currentUser.ID
+			requestedUserID := req.UserID
+			if requestedUserID > 0 && requestedUserID != currentUser.ID {
+				if !currentUser.IsAdmin {
+					writeJSONError(w, http.StatusForbidden, "cannot create device for another user")
+					return
+				}
+				userID = requestedUserID
+			}
+		}
+
 		device, err := deviceStore.CreateDevice(r.Context(), store.CreateDeviceParams{
-			UserID:     req.UserID,
+			UserID:     userID,
 			Name:       name,
 			SourceType: sourceType,
 			APIKey:     apiKey,
@@ -104,6 +138,8 @@ func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 func listDevicesHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
+
 		devices, err := deviceStore.ListDevices(r.Context())
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -112,6 +148,9 @@ func listDevicesHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 		out := make([]devicePublicResponse, 0, len(devices))
 		for _, d := range devices {
+			if hasCurrentUser && d.UserID != currentUser.ID {
+				continue
+			}
 			out = append(out, devicePublicResponseFromStore(d))
 		}
 		writeJSON(w, http.StatusOK, listDevicesResponse{Devices: out})
@@ -120,6 +159,8 @@ func listDevicesHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 func getDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
+
 		deviceID, err := parseDeviceIDPath(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid device id")
@@ -135,6 +176,10 @@ func getDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if hasCurrentUser && device.UserID != currentUser.ID {
+			writeJSONError(w, http.StatusNotFound, "device not found")
+			return
+		}
 
 		writeJSON(w, http.StatusOK, devicePublicResponseFromStore(device))
 	}
@@ -142,9 +187,24 @@ func getDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
+
 		deviceID, err := parseDeviceIDPath(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid device id")
+			return
+		}
+		device, err := deviceStore.GetDeviceByID(r.Context(), deviceID)
+		if err != nil {
+			if errors.Is(err, store.ErrDeviceNotFound) {
+				writeJSONError(w, http.StatusNotFound, "device not found")
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if hasCurrentUser && device.UserID != currentUser.ID {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}
 
@@ -164,7 +224,7 @@ func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 			apiKey = generated
 		}
 
-		device, err := deviceStore.RotateDeviceAPIKey(r.Context(), deviceID, apiKey)
+		device, err = deviceStore.RotateDeviceAPIKey(r.Context(), deviceID, apiKey)
 		if err != nil {
 			if errors.Is(err, store.ErrDeviceNotFound) {
 				writeJSONError(w, http.StatusNotFound, "device not found")

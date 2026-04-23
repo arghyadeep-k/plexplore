@@ -155,3 +155,99 @@ func TestGPXExport_InvalidTimestampQuery(t *testing.T) {
 		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload geoJSONFeatureCollection
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal geojson failed: %v", err)
+	}
+	if len(payload.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(payload.Features))
+	}
+	if payload.Features[0].Properties["device_id"] != "u1-phone" {
+		t.Fatalf("expected u1-phone only, got %+v", payload.Features[0].Properties)
+	}
+}
+
+func TestGeoJSONExport_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   &fakePointStore{},
+		DeviceStore:  &fakeDeviceStore{},
+		UserStore:    &fakeUserStore{users: map[int64]store.User{}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=u2-phone", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var parsed gpxDocument
+	if err := xml.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("xml unmarshal failed: %v", err)
+	}
+	if len(parsed.Track.Segment.Points) != 0 {
+		t.Fatalf("expected 0 points for cross-user filter trick, got %d", len(parsed.Track.Segment.Points))
+	}
+}

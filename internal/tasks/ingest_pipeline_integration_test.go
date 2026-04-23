@@ -349,6 +349,66 @@ func TestIntegration_SpoolSegmentRolloverReplaysCorrectly(t *testing.T) {
 	}
 }
 
+func TestIntegration_DeviceAPIKeyIngestPersistsUnderCorrectOwnerAndDevice(t *testing.T) {
+	env := newIntegrationEnv(t, integrationOptions{})
+
+	user2ID := createUser(t, env.sqliteStore, "user2@example.com")
+	user3ID := createUser(t, env.sqliteStore, "user3@example.com")
+	device2 := createDeviceForUser(t, env.sqliteStore, user2ID, "shared-phone", "owntracks", "k-u2")
+	device3 := createDeviceForUser(t, env.sqliteStore, user3ID, "shared-phone", "owntracks", "k-u3")
+
+	respU2 := env.postJSON("/api/v1/owntracks", "k-u2", ownTracksPayload(41.61000, -87.61000, 1713777600))
+	if respU2.Code != http.StatusOK {
+		t.Fatalf("u2 ingest expected 200, got %d body=%s", respU2.Code, respU2.Body.String())
+	}
+	respU3 := env.postJSON("/api/v1/owntracks", "k-u3", ownTracksPayload(41.62000, -87.62000, 1713777660))
+	if respU3.Code != http.StatusOK {
+		t.Fatalf("u3 ingest expected 200, got %d body=%s", respU3.Code, respU3.Body.String())
+	}
+	if err := env.batchFlusher.FlushNow(); err != nil {
+		t.Fatalf("FlushNow failed: %v", err)
+	}
+
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points WHERE device_id = ?;`, device2.ID); got != 1 {
+		t.Fatalf("expected one raw point for user2 device, got %d", got)
+	}
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points WHERE device_id = ?;`, device3.ID); got != 1 {
+		t.Fatalf("expected one raw point for user3 device, got %d", got)
+	}
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points WHERE user_id != ? AND device_id = ?;`, user2ID, device2.ID); got != 0 {
+		t.Fatalf("expected no cross-user contamination for user2 device, got %d", got)
+	}
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points WHERE user_id != ? AND device_id = ?;`, user3ID, device3.ID); got != 0 {
+		t.Fatalf("expected no cross-user contamination for user3 device, got %d", got)
+	}
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points rp JOIN devices d ON rp.device_id = d.id WHERE rp.user_id != d.user_id;`); got != 0 {
+		t.Fatalf("expected raw_points.user_id to match devices.user_id for all ingested rows, got mismatches=%d", got)
+	}
+	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM devices;`); got != 2 {
+		t.Fatalf("expected exactly two managed devices (no fallback auto devices), got %d", got)
+	}
+}
+
+func TestIntegration_InvalidDeviceAPIKeyRejected_NoDataPersisted(t *testing.T) {
+	env := newIntegrationEnv(t, integrationOptions{})
+
+	createDevice(t, env.sqliteStore, "phone-main", "owntracks", "k-valid")
+
+	resp := env.postJSON("/api/v1/owntracks", "k-invalid", ownTracksPayload(41.70000, -87.70000, 1713777600))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid API key ingest expected 401, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := env.bufferManager.Stats().TotalBufferedPoints; got != 0 {
+		t.Fatalf("expected no buffered points for invalid API key, got %d", got)
+	}
+	if got := countTableRows(t, env.dbPath, "raw_points"); got != 0 {
+		t.Fatalf("expected raw_points=0 after invalid API key request, got %d", got)
+	}
+	if got := countTableRows(t, env.dbPath, "points"); got != 0 {
+		t.Fatalf("expected points=0 after invalid API key request, got %d", got)
+	}
+}
+
 type integrationOptions struct {
 	segmentMaxBytes int
 	flushBatchSize  int
@@ -491,6 +551,36 @@ func createDevice(t *testing.T, deviceStore *store.SQLiteStore, name, sourceType
 	}
 }
 
+func createDeviceForUser(t *testing.T, deviceStore *store.SQLiteStore, userID int64, name, sourceType, apiKey string) store.Device {
+	t.Helper()
+
+	device, err := deviceStore.CreateDevice(context.Background(), store.CreateDeviceParams{
+		UserID:     userID,
+		Name:       name,
+		SourceType: sourceType,
+		APIKey:     apiKey,
+	})
+	if err != nil {
+		t.Fatalf("CreateDevice for user %d failed: %v", userID, err)
+	}
+	return device
+}
+
+func createUser(t *testing.T, userStore *store.SQLiteStore, email string) int64 {
+	t.Helper()
+
+	user, err := userStore.CreateUser(context.Background(), store.CreateUserParams{
+		Name:         email,
+		Email:        email,
+		PasswordHash: "hash-for-tests",
+		IsAdmin:      false,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser %q failed: %v", email, err)
+	}
+	return user.ID
+}
+
 func ownTracksPayload(lat, lon float64, tst int64) string {
 	return fmt.Sprintf(`{"_type":"location","lat":%.5f,"lon":%.5f,"tst":%d}`, lat, lon, tst)
 }
@@ -534,6 +624,22 @@ func queryString(t *testing.T, dbPath, query string) string {
 	var value string
 	if err := db.QueryRow(query).Scan(&value); err != nil {
 		t.Fatalf("query string failed: %v", err)
+	}
+	return value
+}
+
+func queryInt(t *testing.T, dbPath, query string, args ...interface{}) int {
+	t.Helper()
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite db %q failed: %v", dbPath, err)
+	}
+	defer db.Close()
+
+	var value int
+	if err := db.QueryRow(query, args...).Scan(&value); err != nil {
+		t.Fatalf("query int failed: %v", err)
 	}
 	return value
 }

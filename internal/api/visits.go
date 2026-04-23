@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"plexplore/internal/store"
 	"plexplore/internal/visits"
 )
 
@@ -32,17 +33,47 @@ type listVisitsResponse struct {
 	Visits []visitResponse `json:"visits"`
 }
 
-func registerVisitRoutes(mux *http.ServeMux, visitStore VisitStore, labelResolver VisitLabelResolver) {
-	mux.HandleFunc("POST /api/v1/visits/generate", generateVisitsHandler(visitStore))
-	mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(visitStore, labelResolver))
+func registerVisitRoutes(mux *http.ServeMux, deps Dependencies) {
+	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
+		mux.Handle(
+			"POST /api/v1/visits/generate",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(generateVisitsHandler(deps.VisitStore, deps.DeviceStore))),
+			),
+		)
+		mux.Handle(
+			"GET /api/v1/visits",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, deps.DeviceStore))),
+			),
+		)
+		return
+	}
+	mux.HandleFunc("POST /api/v1/visits/generate", generateVisitsHandler(deps.VisitStore, nil))
+	mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, nil))
 }
 
-func generateVisitsHandler(visitStore VisitStore) http.HandlerFunc {
+func generateVisitsHandler(visitStore VisitStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 		if deviceID == "" {
 			writeJSONError(w, http.StatusBadRequest, "device_id is required")
 			return
+		}
+		if deviceStore != nil {
+			allowedDeviceIDs, err := currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if _, ok := allowedDeviceIDs[deviceID]; !ok {
+				writeJSONError(w, http.StatusNotFound, "device not found")
+				return
+			}
 		}
 
 		fromUTC, err := parseOptionalRFC3339Param(r.URL.Query().Get("from"))
@@ -96,9 +127,25 @@ func generateVisitsHandler(visitStore VisitStore) http.HandlerFunc {
 	}
 }
 
-func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver) http.HandlerFunc {
+func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+		allowedDeviceIDs := map[string]struct{}{}
+		if deviceStore != nil {
+			var err error
+			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if deviceID != "" {
+				if _, ok := allowedDeviceIDs[deviceID]; !ok {
+					writeJSON(w, http.StatusOK, listVisitsResponse{Visits: []visitResponse{}})
+					return
+				}
+			}
+		}
+
 		fromUTC, err := parseOptionalRFC3339Param(r.URL.Query().Get("from"))
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
@@ -123,6 +170,15 @@ func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver) 
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if deviceStore != nil {
+			filtered := make([]store.Visit, 0, len(items))
+			for _, item := range items {
+				if _, ok := allowedDeviceIDs[item.DeviceID]; ok {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
 		}
 
 		remainingProviderLookups := 0

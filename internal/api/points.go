@@ -22,16 +22,56 @@ type recentPointsResponse struct {
 }
 
 func registerPointRoutes(mux *http.ServeMux, deps Dependencies) {
-	mux.HandleFunc("GET /api/v1/points", pointsHandler(deps.PointStore))
-	mux.HandleFunc("GET /api/v1/points/recent", recentPointsHandler(deps.PointStore))
+	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
+		mux.Handle(
+			"GET /api/v1/points",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(pointsHandler(deps.PointStore, deps.DeviceStore))),
+			),
+		)
+		mux.Handle(
+			"GET /api/v1/points/recent",
+			LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuth(http.HandlerFunc(recentPointsHandler(deps.PointStore, deps.DeviceStore))),
+			),
+		)
+		return
+	}
+	mux.HandleFunc("GET /api/v1/points", pointsHandler(deps.PointStore, nil))
+	mux.HandleFunc("GET /api/v1/points/recent", recentPointsHandler(deps.PointStore, nil))
 }
 
-func pointsHandler(pointStore PointStore) http.HandlerFunc {
+func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filter, err := exportFilterFromRequest(r)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		allowedDeviceIDs := map[string]struct{}{}
+		currentUserID := int64(0)
+		if deviceStore != nil {
+			currentUser, ok := CurrentUserFromContext(r.Context())
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			currentUserID = currentUser.ID
+			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if filter.DeviceID != "" {
+				if _, ok := allowedDeviceIDs[filter.DeviceID]; !ok {
+					writeJSON(w, http.StatusOK, recentPointsResponse{Points: []recentPointResponse{}})
+					return
+				}
+			}
 		}
 
 		limit, err := parseOptionalLimitParam(r, 500)
@@ -45,6 +85,15 @@ func pointsHandler(pointStore PointStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if deviceStore != nil {
+			filtered := make([]store.RecentPoint, 0, len(points))
+			for _, point := range points {
+				if _, ok := allowedDeviceIDs[point.DeviceID]; ok && point.UserID == currentUserID {
+					filtered = append(filtered, point)
+				}
+			}
+			points = filtered
+		}
 
 		out := make([]recentPointResponse, 0, len(points))
 		for _, point := range points {
@@ -54,7 +103,7 @@ func pointsHandler(pointStore PointStore) http.HandlerFunc {
 	}
 }
 
-func recentPointsHandler(pointStore PointStore) http.HandlerFunc {
+func recentPointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 
@@ -68,6 +117,27 @@ func recentPointsHandler(pointStore PointStore) http.HandlerFunc {
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+
+		if deviceStore != nil {
+			currentUser, ok := CurrentUserFromContext(r.Context())
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			allowedDeviceIDs, err := currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+
+			filtered := make([]store.RecentPoint, 0, len(points))
+			for _, point := range points {
+				if _, allowed := allowedDeviceIDs[point.DeviceID]; allowed && point.UserID == currentUser.ID {
+					filtered = append(filtered, point)
+				}
+			}
+			points = filtered
 		}
 
 		out := make([]recentPointResponse, 0, len(points))
@@ -84,6 +154,48 @@ func recentPointsHandler(pointStore PointStore) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, recentPointsResponse{Points: out})
 	}
+}
+
+func currentUserAllowedDeviceIDs(r *http.Request, deviceStore DeviceStore) (map[string]struct{}, error) {
+	currentUser, ok := CurrentUserFromContext(r.Context())
+	if !ok {
+		return nil, errAuthRequired
+	}
+	devices, err := deviceStore.ListDevices(r.Context())
+	if err != nil {
+		return nil, errDeviceLookupFailed
+	}
+	allowedDeviceIDs := make(map[string]struct{})
+	for _, d := range devices {
+		if d.UserID == currentUser.ID {
+			allowedDeviceIDs[d.Name] = struct{}{}
+		}
+	}
+	return allowedDeviceIDs, nil
+}
+
+func httpStatusFromOwnershipError(err error) int {
+	switch err {
+	case errAuthRequired:
+		return http.StatusUnauthorized
+	case errDeviceLookupFailed:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+var (
+	errAuthRequired       = &ownershipError{message: "authentication required"}
+	errDeviceLookupFailed = &ownershipError{message: "device lookup failed"}
+)
+
+type ownershipError struct {
+	message string
+}
+
+func (e *ownershipError) Error() string {
+	return e.message
 }
 
 func parseOptionalLimitParam(r *http.Request, fallback int) (int, error) {

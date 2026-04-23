@@ -122,7 +122,7 @@ func TestSQLiteStore_InsertSpoolBatch_Success(t *testing.T) {
 	if err := store.db.QueryRow(`
 SELECT last_seq_received, COALESCE(last_seen_at, '')
 FROM devices
-WHERE api_key = 'auto:d1';
+WHERE api_key = 'auto:1:d1';
 `).Scan(&lastSeq, &lastSeen); err != nil {
 		t.Fatalf("query device status failed: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSQLiteStore_InsertSpoolBatch_PartialDuplicates(t *testing.T) {
 	}
 
 	var lastSeq int
-	if err := store.db.QueryRow(`SELECT last_seq_received FROM devices WHERE api_key = ?;`, "auto:d1").Scan(&lastSeq); err != nil {
+	if err := store.db.QueryRow(`SELECT last_seq_received FROM devices WHERE api_key = ?;`, "auto:1:d1").Scan(&lastSeq); err != nil {
 		t.Fatalf("query device last_seq_received failed: %v", err)
 	}
 	if lastSeq != 4 {
@@ -221,7 +221,7 @@ func TestSQLiteStore_InsertSpoolBatch_MultipleDevices(t *testing.T) {
 
 	for device, want := range map[string]int{"d1": 1, "d2": 3} {
 		var got int
-		if err := store.db.QueryRow(`SELECT last_seq_received FROM devices WHERE api_key = ?;`, fmt.Sprintf("auto:%s", device)).Scan(&got); err != nil {
+		if err := store.db.QueryRow(`SELECT last_seq_received FROM devices WHERE api_key = ?;`, fmt.Sprintf("auto:1:%s", device)).Scan(&got); err != nil {
 			t.Fatalf("query device %s failed: %v", device, err)
 		}
 		if got != want {

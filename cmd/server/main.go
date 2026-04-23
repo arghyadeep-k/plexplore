@@ -100,6 +100,8 @@ func main() {
 		PointStore:         sqliteStore,
 		VisitStore:         sqliteStore,
 		VisitLabelResolver: visitLabelResolver,
+		UserStore:          sqliteStore,
+		SessionStore:       sqliteStore,
 		SpoolDir:           cfg.SpoolDir,
 		SQLitePath:         cfg.SQLitePath,
 		IsDraining: func() bool {

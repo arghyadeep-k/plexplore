@@ -27,6 +27,19 @@ type DeviceStore interface {
 	RotateDeviceAPIKey(rctx context.Context, id int64, newAPIKey string) (store.Device, error)
 }
 
+type UserStore interface {
+	GetUserByID(rctx context.Context, id int64) (store.User, error)
+	GetUserByEmail(rctx context.Context, email string) (store.User, error)
+	CreateUser(rctx context.Context, params store.CreateUserParams) (store.User, error)
+	ListUsers(rctx context.Context) ([]store.User, error)
+}
+
+type SessionStore interface {
+	CreateSession(rctx context.Context, userID int64) (store.Session, error)
+	GetSession(rctx context.Context, token string) (store.Session, error)
+	DeleteSession(rctx context.Context, token string) error
+}
+
 type SpoolAppender interface {
 	AppendCanonicalPoints(points []ingest.CanonicalPoint) ([]ingest.SpoolRecord, error)
 	ReadCheckpoint() (spool.Checkpoint, error)
@@ -71,6 +84,8 @@ type Dependencies struct {
 	PointStore         PointStore
 	VisitStore         VisitStore
 	VisitLabelResolver VisitLabelResolver
+	UserStore          UserStore
+	SessionStore       SessionStore
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
@@ -82,9 +97,9 @@ func RegisterRoutes(mux *http.ServeMux) {
 
 func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("GET /health", healthHandler)
-	registerUIRoutes(mux)
+	registerUIRoutes(mux, deps)
 	if deps.DeviceStore != nil {
-		registerDeviceRoutes(mux, deps.DeviceStore)
+		registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore)
 	}
 	if deps.DeviceStore != nil && deps.Spool != nil && deps.Buffer != nil {
 		registerIngestRoutes(mux, deps)
@@ -97,7 +112,11 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 		registerExportRoutes(mux, deps)
 	}
 	if deps.VisitStore != nil {
-		registerVisitRoutes(mux, deps.VisitStore, deps.VisitLabelResolver)
+		registerVisitRoutes(mux, deps)
+	}
+	if deps.UserStore != nil && deps.SessionStore != nil {
+		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore)
+		registerUserRoutes(mux, deps.UserStore, deps.SessionStore)
 	}
 }
 

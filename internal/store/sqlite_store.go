@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,7 +65,7 @@ func (s *SQLiteStore) InsertSpoolBatch(records []ingest.SpoolRecord) (uint64, er
 		_ = tx.Rollback()
 	}()
 
-	userID, err := ensureDefaultUser(tx)
+	defaultUserID, err := ensureDefaultUser(tx)
 	if err != nil {
 		return 0, err
 	}
@@ -112,6 +114,11 @@ WHERE id = ?;
 	deviceLastSeq := make(map[int64]uint64)
 
 	for _, record := range records {
+		userID := defaultUserID
+		if parsedUserID, ok := parsePointUserID(record.Point.UserID); ok {
+			userID = parsedUserID
+		}
+
 		deviceName := normalizedDeviceName(record.DeviceID)
 		sourceType := normalizedSourceType(record.Point.SourceType)
 		deviceID, err := ensureDevice(tx, userID, deviceName, sourceType)
@@ -207,8 +214,35 @@ ON CONFLICT(id) DO NOTHING;
 	return 1, nil
 }
 
+func parsePointUserID(raw string) (int64, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, false
+	}
+	return parsed, true
+}
+
 func ensureDevice(tx *sql.Tx, userID int64, deviceName, sourceType string) (int64, error) {
-	apiKey := "auto:" + deviceName
+	var existingID int64
+	err := tx.QueryRow(`
+SELECT id
+FROM devices
+WHERE user_id = ? AND name = ?
+ORDER BY id ASC
+LIMIT 1;
+`, userID, deviceName).Scan(&existingID)
+	if err == nil {
+		return existingID, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("lookup device %q for user %d: %w", deviceName, userID, err)
+	}
+
+	apiKey := fmt.Sprintf("auto:%d:%s", userID, deviceName)
 	nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.Exec(`
 INSERT INTO devices(user_id, name, source_type, api_key, last_seq_received, updated_at)
@@ -219,7 +253,7 @@ ON CONFLICT(api_key) DO NOTHING;
 	}
 
 	var id int64
-	if err := tx.QueryRow(`SELECT id FROM devices WHERE api_key = ?;`, apiKey).Scan(&id); err != nil {
+	if err := tx.QueryRow(`SELECT id FROM devices WHERE user_id = ? AND name = ? ORDER BY id ASC LIMIT 1;`, userID, deviceName).Scan(&id); err != nil {
 		return 0, fmt.Errorf("select device id %q: %w", deviceName, err)
 	}
 	return id, nil

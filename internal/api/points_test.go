@@ -203,3 +203,192 @@ func TestRecentPointsEndpoint_InvalidLimit(t *testing.T) {
 		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRecentPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?limit=20", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp recentPointsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if len(resp.Points) != 1 || resp.Points[0].DeviceID != "u1-phone" {
+		t.Fatalf("expected only user1 points, got %+v", resp.Points)
+	}
+}
+
+func TestRecentPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=u2-phone&limit=20", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp recentPointsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if len(resp.Points) != 0 {
+		t.Fatalf("expected zero points for cross-user device filter trick, got %+v", resp.Points)
+	}
+}
+
+func TestRecentPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   &fakePointStore{},
+		DeviceStore:  &fakeDeviceStore{},
+		UserStore:    &fakeUserStore{users: map[int64]store.User{}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?limit=20", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp recentPointsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if len(resp.Points) != 1 || resp.Points[0].DeviceID != "u1-phone" {
+		t.Fatalf("expected only user1 points, got %+v", resp.Points)
+	}
+}
+
+func TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u1-phone", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u2-phone", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=u2-phone&limit=20", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp recentPointsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if len(resp.Points) != 0 {
+		t.Fatalf("expected zero points for cross-user device filter trick, got %+v", resp.Points)
+	}
+}
+
+func TestPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		PointStore:   &fakePointStore{},
+		DeviceStore:  &fakeDeviceStore{},
+		UserStore:    &fakeUserStore{users: map[int64]store.User{}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

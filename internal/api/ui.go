@@ -1,8 +1,10 @@
 package api
 
 import (
+	"html"
 	"io"
 	"net/http"
+	"strings"
 )
 
 const statusPageHTML = `<!doctype html>
@@ -59,6 +61,32 @@ const statusPageHTML = `<!doctype html>
       align-items: center;
       justify-content: space-between;
       margin-bottom: 8px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-user {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .nav-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+    .logout-btn {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
     }
     h1 {
       margin: 0;
@@ -130,7 +158,15 @@ const statusPageHTML = `<!doctype html>
   <div class="wrap">
     <div class="topbar">
       <h1>Plexplore Status</h1>
-      <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+      <div class="top-actions">
+        <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        __ADMIN_LINK__
+        <form method="post" action="/logout" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+        <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+      </div>
     </div>
     <div id="updated" class="tiny">Loading...</div>
 
@@ -405,6 +441,32 @@ const mapPageHTML = `<!doctype html>
       justify-content: space-between;
       margin-bottom: 10px;
     }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-user {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .nav-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+    .logout-btn {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
     .theme-toggle {
       border: 1px solid var(--border);
       background: var(--toggle-bg);
@@ -461,7 +523,15 @@ const mapPageHTML = `<!doctype html>
   <div class="wrap">
     <div class="topbar">
       <h1>Plexplore Map</h1>
-      <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+      <div class="top-actions">
+        <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        __ADMIN_LINK__
+        <form method="post" action="/logout" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+        <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+      </div>
     </div>
     <div class="card">
       <div class="row">
@@ -761,18 +831,270 @@ const mapPageHTML = `<!doctype html>
 </html>
 `
 
-func registerUIRoutes(mux *http.ServeMux) {
+const adminUsersPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Plexplore Admin Users</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --bg-top: #eef3f8;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #5a6573;
+      --accent: #0b6bcb;
+      --border: #d7dde5;
+      --shadow: rgba(9, 30, 66, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 20px auto;
+      padding: 0 12px 18px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-user {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .nav-link, .logout-btn {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 1px 2px var(--shadow);
+      margin-bottom: 12px;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    input, button {
+      font: inherit;
+      padding: 7px 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--text);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 7px 6px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>Admin Users</h1>
+      <div class="top-actions">
+        <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        <a class="nav-link" href="/ui/status">Status</a>
+        <a class="nav-link" href="/ui/map">Map</a>
+        <form method="post" action="/logout" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <input id="email" type="email" placeholder="user@example.com" style="min-width:240px;">
+        <input id="password" type="password" placeholder="password" style="min-width:180px;">
+        <label><input id="is_admin" type="checkbox"> admin</label>
+        <button id="create_btn" type="button">Create User</button>
+      </div>
+      <div id="create_status" class="muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Email</th><th>Admin</th><th>Created</th></tr>
+        </thead>
+        <tbody id="users_body">
+          <tr><td colspan="4" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const CSRF_TOKEN = "__CSRF_TOKEN__";
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>'"]/g, (ch) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"
+      }[ch]));
+    }
+
+    async function loadUsers() {
+      const body = document.getElementById("users_body");
+      const res = await fetch("/api/v1/users", { cache: "no-store" });
+      if (!res.ok) throw new Error("users HTTP " + res.status);
+      const payload = await res.json();
+      const users = (payload && payload.users) || [];
+      if (!users.length) {
+        body.innerHTML = "<tr><td colspan='4' class='muted'>No users</td></tr>";
+        return;
+      }
+      body.innerHTML = users.map((u) =>
+        "<tr><td>" + u.id + "</td><td>" + escapeHTML(u.email || "") + "</td><td>" +
+        (u.is_admin ? "yes" : "no") + "</td><td>" + escapeHTML(u.created_at || "") + "</td></tr>"
+      ).join("");
+    }
+
+    async function createUser() {
+      const status = document.getElementById("create_status");
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const isAdmin = document.getElementById("is_admin").checked;
+      if (!email || !password) {
+        status.textContent = "Email and password are required.";
+        return;
+      }
+      status.textContent = "Creating...";
+      const res = await fetch("/api/v1/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": CSRF_TOKEN,
+        },
+        body: JSON.stringify({ email, password, is_admin: isAdmin }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        status.textContent = "Create failed: " + text;
+        return;
+      }
+      status.textContent = "User created.";
+      document.getElementById("email").value = "";
+      document.getElementById("password").value = "";
+      document.getElementById("is_admin").checked = false;
+      await loadUsers();
+    }
+
+    document.getElementById("create_btn").addEventListener("click", () => {
+      createUser().catch((err) => {
+        const status = document.getElementById("create_status");
+        status.textContent = "Create failed: " + err.message;
+      });
+    });
+
+    loadUsers().catch((err) => {
+      const body = document.getElementById("users_body");
+      body.innerHTML = "<tr><td colspan='4' class='muted'>Load failed: " + escapeHTML(err.message) + "</td></tr>";
+    });
+  </script>
+</body>
+</html>
+`
+
+func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
+	if deps.SessionStore != nil && deps.UserStore != nil {
+		protectedHTML := func(handler http.HandlerFunc) http.Handler {
+			return LoadCurrentUserFromSession(
+				deps.SessionStore,
+				deps.UserStore,
+				RequireUserSessionAuthHTML(http.HandlerFunc(handler)),
+			)
+		}
+		mux.Handle("GET /{$}", protectedHTML(statusPageHandler))
+		mux.Handle("GET /ui/status", protectedHTML(statusPageHandler))
+		mux.Handle("GET /ui/map", protectedHTML(mapPageHandler))
+		mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler)))
+		return
+	}
+
 	mux.HandleFunc("GET /{$}", statusPageHandler)
 	mux.HandleFunc("GET /ui/status", statusPageHandler)
 	mux.HandleFunc("GET /ui/map", mapPageHandler)
+	mux.HandleFunc("GET /ui/admin/users", adminUsersPageHandler)
 }
 
-func statusPageHandler(w http.ResponseWriter, _ *http.Request) {
+func statusPageHandler(w http.ResponseWriter, r *http.Request) {
+	csrfToken := ensureCSRFCookie(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, statusPageHTML)
+	_, _ = io.WriteString(w, renderUIPage(statusPageHTML, r, csrfToken))
 }
 
-func mapPageHandler(w http.ResponseWriter, _ *http.Request) {
+func mapPageHandler(w http.ResponseWriter, r *http.Request) {
+	csrfToken := ensureCSRFCookie(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, mapPageHTML)
+	_, _ = io.WriteString(w, renderUIPage(mapPageHTML, r, csrfToken))
+}
+
+func adminUsersPageHandler(w http.ResponseWriter, r *http.Request) {
+	csrfToken := ensureCSRFCookie(w, r)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, renderUIPage(adminUsersPageHTML, r, csrfToken))
+}
+
+func renderUIPage(page string, r *http.Request, csrfToken string) string {
+	userEmail := "local"
+	adminLink := ""
+	if currentUser, ok := CurrentUserFromContext(r.Context()); ok {
+		if trimmed := strings.TrimSpace(currentUser.Email); trimmed != "" {
+			userEmail = trimmed
+		}
+		if currentUser.IsAdmin {
+			adminLink = `<a id="admin_users_link" class="nav-link" href="/ui/admin/users">Admin Users</a>`
+		}
+	}
+	rendered := strings.ReplaceAll(page, "__USER_EMAIL__", html.EscapeString(userEmail))
+	rendered = strings.ReplaceAll(rendered, "__ADMIN_LINK__", adminLink)
+	return strings.ReplaceAll(rendered, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
+}
+
+func requireAdminHTML(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		currentUser, ok := CurrentUserFromContext(r.Context())
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if !currentUser.IsAdmin {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
 }

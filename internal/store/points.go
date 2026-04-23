@@ -10,6 +10,7 @@ import (
 // RecentPoint is a compact debugging projection of stored location points.
 type RecentPoint struct {
 	Seq          uint64
+	UserID       int64
 	DeviceID     string
 	SourceType   string
 	TimestampUTC time.Time
@@ -34,7 +35,7 @@ func (s *SQLiteStore) ListRecentPoints(ctx context.Context, deviceID string, lim
 
 	device := strings.TrimSpace(deviceID)
 	baseSQL := `
-SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
 JOIN devices d ON d.id = rp.device_id
 `
@@ -59,6 +60,7 @@ JOIN devices d ON d.id = rp.device_id
 		var timestampRaw string
 		if err := rows.Scan(
 			&point.Seq,
+			&point.UserID,
 			&point.DeviceID,
 			&point.SourceType,
 			&timestampRaw,
@@ -89,7 +91,7 @@ func (s *SQLiteStore) ListPoints(ctx context.Context, filter ExportPointFilter, 
 	}
 
 	baseSQL := `
-SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
 JOIN devices d ON d.id = rp.device_id
 `
@@ -129,6 +131,7 @@ JOIN devices d ON d.id = rp.device_id
 		var timestampRaw string
 		if err := rows.Scan(
 			&point.Seq,
+			&point.UserID,
 			&point.DeviceID,
 			&point.SourceType,
 			&timestampRaw,
@@ -152,7 +155,7 @@ JOIN devices d ON d.id = rp.device_id
 
 func (s *SQLiteStore) ListPointsForExport(ctx context.Context, filter ExportPointFilter) ([]RecentPoint, error) {
 	baseSQL := `
-SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
 JOIN devices d ON d.id = rp.device_id
 `
@@ -191,6 +194,7 @@ JOIN devices d ON d.id = rp.device_id
 		var timestampRaw string
 		if err := rows.Scan(
 			&point.Seq,
+			&point.UserID,
 			&point.DeviceID,
 			&point.SourceType,
 			&timestampRaw,

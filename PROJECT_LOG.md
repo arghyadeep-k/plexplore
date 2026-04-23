@@ -2071,3 +2071,883 @@ Pending:
 
 Known issues:
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 00:55 UTC - Phase 51 (Task 1: User Auth Schema + Store Foundations)
+Implemented:
+- Added user-auth schema migration for admin-created-user model foundations:
+- `migrations/0005_users_auth_fields.sql`
+- Added users columns:
+- `password_hash` (non-null, default empty string)
+- `is_admin` (non-null integer flag, default `0`)
+- `updated_at` (non-null, default empty string then backfilled)
+- Added safe data backfill in migration for:
+- null emails -> empty string
+- empty/null `updated_at` -> `created_at` fallback (or current UTC fallback)
+- Added unique index for non-empty emails:
+- `idx_users_email_unique_nonempty` on `users(email)` where `email <> ''`
+- Added user store model/methods:
+- `CreateUser(...)`
+- `GetUserByEmail(...)`
+- `GetUserByID(...)`
+- `ListUsers(...)`
+- Added user store tests:
+- create + get by email (case-insensitive)
+- list users
+- not-found handling
+- schema column presence check (`PRAGMA table_info(users)`)
+- Updated README with a short "Multi-User Auth Foundation (In Progress)" section.
+
+Architectural decisions:
+- Decision: Keep `email` uniqueness via partial unique index (`email <> ''`) instead of forcing immediate full table rewrite.
+  Reason: Keeps migration lightweight and compatible with existing default-user bootstrap behavior while enabling account-auth email uniqueness for real accounts.
+- Decision: Keep task scope to schema/store only (no login/session yet).
+  Reason: Follows ordered milestone plan and keeps change atomic.
+
+Files changed:
+- `migrations/0005_users_auth_fields.sql`
+- `internal/store/users.go`
+- `internal/store/users_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/users.go internal/store/users_test.go`
+- `go test ./internal/store ./...`
+- `APP_SQLITE_PATH=./data/task1fresh.db make migrate`
+- `sqlite3 ./data/task1fresh.db ".schema users"`
+- `go test ./internal/store -count=1`
+
+Pending:
+- Task 2: Add password hashing helpers (`HashPassword`, `VerifyPassword`) with focused unit tests.
+- Task 3+: Continue ordered multi-user auth milestone tasks from `codex_tasks.md`.
+
+Known issues:
+- In this shell environment, some write/build commands require elevated execution due sandbox restrictions (`/tmp` write for `go run`/`gofmt`).
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 01:02 UTC - Phase 52 (Task 2: Password Hashing Helpers)
+Implemented:
+- Added password hashing helpers in existing auth-related package:
+- `internal/api/password.go`
+- `HashPassword(plain string) (string, error)`
+- `VerifyPassword(hash, plain string) bool`
+- Implemented bcrypt-based hashing/verification via `golang.org/x/crypto/bcrypt`.
+- Added basic validation:
+- empty/whitespace password rejected by `HashPassword` (`ErrEmptyPassword`)
+- verify returns `false` for empty hash/password
+- Added focused unit tests:
+- valid hash/verify roundtrip
+- wrong password fails verification
+- empty password rejected
+- Added dependency pin:
+- `golang.org/x/crypto v0.24.0` (Go 1.22-compatible)
+- Restored module baseline to `go 1.22.0` in `go.mod` after transient `go get` toolchain bump attempt.
+- Updated README auth-foundation section with password helper notes.
+
+Architectural decisions:
+- Decision: Place helpers in `internal/api` auth-related package due environment constraint preventing creation of new internal directory for a separate `security` package.
+  Reason: Keep Task 2 atomic and unblock ordered milestone progress while maintaining isolated helper functions.
+- Decision: Use bcrypt with default cost for first pass.
+  Reason: Standard, lightweight, and sufficient for current scope without introducing heavier config surface yet.
+
+Files changed:
+- `internal/api/password.go`
+- `internal/api/password_test.go`
+- `go.mod`
+- `go.sum`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'Test(HashAndVerifyPassword|VerifyPassword_WrongPasswordFails|HashPassword_EmptyRejected)' -count=1`
+- `go test ./... -count=1`
+- `gofmt -w internal/api/password.go internal/api/password_test.go`
+
+Pending:
+- Task 3: Add admin bootstrap path (preferred CLI tool) without public signup.
+- Task 4+: Continue sequential multi-user auth plan.
+
+Known issues:
+- In this shell environment, some write/build commands require elevated execution due sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 01:24 UTC - Phase 53 (Task 3: Admin Bootstrap CLI Path)
+Implemented:
+- Added admin bootstrap path without public signup by extending CLI workflow in `cmd/migrate`:
+- new mode flag: `--create-admin`
+- required flags in admin mode: `--email`, `--password`
+- optional flags: `--db`, `--migrations`, `--is-admin` (must be true)
+- CLI behavior in `--create-admin` mode:
+- runs migrations first
+- checks for existing user by email
+- blocks duplicate admin creation for same email
+- blocks creating admin over existing non-admin account with same email
+- hashes password via bcrypt helper before persistence
+- creates user with `is_admin=true`
+- Added CLI tests:
+- successful admin bootstrap creation
+- duplicate bootstrap blocked
+- validation errors for missing/invalid flags
+- Updated README with explicit admin bootstrap usage and behavior notes.
+- Performed manual validation on fresh DB:
+- migrate
+- bootstrap admin
+- query users table for admin row
+- confirm password hash length/non-plaintext
+
+Architectural decisions:
+- Decision: Implement bootstrap mode as `go run ./cmd/migrate --create-admin ...` instead of new `cmd/createadmin` binary due current environment constraint on creating a new command directory.
+  Reason: Keeps behavior explicit/safe and unblocks sequential task delivery while preserving lightweight CLI operation.
+
+Files changed:
+- `cmd/migrate/main.go`
+- `cmd/migrate/main_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./cmd/migrate -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db make migrate`
+- `go run ./cmd/migrate --db ./data/task3bootstrap.db --migrations ./migrations --create-admin --email admin@example.com --password testpass`
+- `sqlite3 ./data/task3bootstrap.db "SELECT COUNT(*), COALESCE(MAX(email),''), COALESCE(MAX(is_admin),0) FROM users;"`
+- `sqlite3 ./data/task3bootstrap.db "SELECT email, is_admin, LENGTH(password_hash), password_hash='testpass' FROM users;"`
+
+Pending:
+- Task 4: Add session model/migration and middleware for browser auth.
+- Task 5+: Continue sequential multi-user auth tasks.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 01:29 UTC - Phase 54 (Task 4: Session Model + Session Loader Middleware)
+Implemented:
+- Added session persistence migration:
+- `migrations/0006_sessions.sql`
+- table: `sessions(token, user_id, expires_at, created_at)`
+- Added session store methods in `internal/store/sessions.go`:
+- `CreateSession(ctx, userID)` with secure random token generation and default TTL
+- `GetSession(ctx, token)` with expiration enforcement (expired sessions treated as missing and deleted best-effort)
+- `DeleteSession(ctx, token)`
+- Added session store tests:
+- create/get/delete success
+- expired session behavior
+- Added API-level session user loader middleware in `internal/api/session_auth.go`:
+- `LoadCurrentUserFromSession(...)`
+- `CurrentUserFromContext(...)`
+- Middleware behavior:
+- reads HttpOnly-style session cookie name (`plexplore_session`)
+- loads session + user on valid token
+- leaves request anonymous for missing/invalid tokens
+- keeps device API key auth path unchanged
+- Added middleware tests for valid and invalid session-cookie paths.
+- Extended API dependency interfaces with `UserStore` and `SessionStore` for upcoming route protection tasks.
+- Updated README with session foundation notes.
+
+Architectural decisions:
+- Decision: Use server-side SQLite session storage with opaque random token.
+  Reason: Lightweight, Pi-friendly, and supports simple revocation/delete behavior without external cache services.
+- Decision: Keep session loader middleware non-blocking for now (enrichment-only).
+  Reason: Task 4 requires load helper; strict route protection is deferred to Task 6 as planned.
+
+Files changed:
+- `migrations/0006_sessions.sql`
+- `internal/store/sessions.go`
+- `internal/store/sessions_test.go`
+- `internal/api/session_auth.go`
+- `internal/api/session_auth_test.go`
+- `internal/api/health.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateGetDeleteSession|GetSession_Expired)' -count=1`
+- `go test ./internal/api -run 'TestLoadCurrentUserFromSession_' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db make migrate`
+- `sqlite3 ./data/task3bootstrap.db ".tables"`
+
+Pending:
+- Task 5: Add login/logout endpoints and minimal sign-in page.
+- Task 6: Add route protection helpers and enforce session auth on relevant routes.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 01:40 UTC - Phase 55 (Task 5: Login/Logout Endpoints + Sign-In Page)
+Implemented:
+- Added login routes:
+- `GET /login` (minimal server-rendered sign-in page)
+- `POST /login` (email/password verification -> create session -> set HttpOnly cookie)
+- `POST /logout` (delete session token and expire cookie)
+- Added lightweight login page HTML with form-based submission (no frontend framework/tooling).
+- Login flow details:
+- uses `GetUserByEmail(...)`
+- verifies password hash via `VerifyPassword(...)`
+- creates server-side session via `CreateSession(...)`
+- sets `plexplore_session` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, expiry from session TTL)
+- Logout flow details:
+- best-effort deletes current session token
+- clears cookie via `MaxAge=-1`
+- redirects to `/login`
+- Wired server dependencies so login/session routes are active in normal server startup:
+- `UserStore: sqliteStore`
+- `SessionStore: sqliteStore`
+- Added API tests:
+- login page render
+- successful login sets session cookie
+- invalid credentials denied
+- logout deletes session and clears cookie
+- Performed manual validation on running server instance against bootstrap DB:
+- `GET /login` returns 200
+- `POST /login` returns 303 with `Set-Cookie: plexplore_session=...`
+- DB session count increases on login and decreases on logout
+- Updated README with login/logout endpoint and curl example.
+
+Architectural decisions:
+- Decision: Keep login as form POST and redirect-based flow.
+  Reason: Minimal server-rendered UX with low client complexity and zero extra dependencies.
+- Decision: Keep session cookie settings simple (`HttpOnly`, `SameSite=Lax`) pending final hardening task.
+  Reason: Sufficient baseline for current milestone stage while deferring stricter secure-cookie/CSRF posture to Task 18.
+
+Files changed:
+- `internal/api/login.go`
+- `internal/api/login_test.go`
+- `internal/api/health.go`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession)' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18080 go run ./cmd/server`
+- `curl -sS -w "%{http_code}\n" http://127.0.0.1:18080/login -o /tmp/login_page.html`
+- `curl -sS -D - -o /dev/null -X POST http://127.0.0.1:18080/login -H "Content-Type: application/x-www-form-urlencoded" --data "email=admin@example.com&password=testpass"`
+- `sqlite3 ./data/task3bootstrap.db "SELECT COUNT(*) FROM sessions;"`
+- `curl -sS -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18080/logout -H "Cookie: plexplore_session=<token>"`
+
+Pending:
+- Task 6: add explicit route protection helpers (`RequireUserSessionAuth`, redirect/401 behavior split).
+- Task 7+: admin-only user management and full user-data scoping tasks.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 03:03 UTC - Phase 56 (Task 6: Authenticated Route Protection Helpers)
+Implemented:
+- Added explicit session-auth protection helpers in `internal/api/session_auth.go`:
+- `RequireUserSessionAuth(...)` for JSON endpoints (returns `401` JSON when anonymous)
+- `RequireUserSessionAuthHTML(...)` for HTML routes (redirects to `/login` when anonymous)
+- Updated UI route registration to enforce session auth when session/user dependencies are provided:
+- protected routes now include:
+- `GET /`
+- `GET /ui/status`
+- `GET /ui/map`
+- Behavior remains backward-compatible for tests/contexts where auth dependencies are not wired.
+- Kept device API key ingest auth path unchanged.
+- Added/updated tests:
+- JSON helper unauthorized behavior
+- HTML helper redirect behavior
+- UI route protection (anonymous redirect to `/login`)
+- UI route success with valid session cookie
+- existing UI/login tests remain passing
+- Updated README session/login sections with new protection helper and redirect behavior notes.
+
+Architectural decisions:
+- Decision: Apply protection to UI routes at registration time using composed middleware (`LoadCurrentUserFromSession` + `RequireUserSessionAuthHTML`).
+  Reason: Keeps implementation simple and explicit without introducing global middleware side effects on all endpoints.
+- Decision: Keep JSON auth helper added but not broadly applied yet.
+  Reason: Task 6 requires helper and behavior; endpoint-by-endpoint JSON enforcement is scheduled in subsequent scoping tasks (Tasks 7+).
+
+Files changed:
+- `internal/api/session_auth.go`
+- `internal/api/session_auth_test.go`
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `internal/api/health.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'Test(LoadCurrentUserFromSession_|RequireUserSessionAuth_|RequireUserSessionAuthHTML_|UIRoutesRequireSession_|UIRoutesAllowSession_)' -count=1`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|LoginPageServed)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 7: admin-only user management endpoints (`GET/POST /api/v1/users`).
+- Task 8+: apply user-scoping and auth enforcement across device/points/export/visits APIs.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 03:22 UTC - Phase 57 (Task 7: Admin-Only User Management Endpoints)
+Implemented:
+- Added admin-only user management routes:
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- Route protection chain:
+- session load (`LoadCurrentUserFromSession`)
+- authenticated check (`RequireUserSessionAuth`)
+- admin check (`RequireAdmin`)
+- `POST /api/v1/users` behavior:
+- validates JSON body with required `email` + `password`
+- hashes password via bcrypt helper before persistence
+- supports `is_admin` flag
+- returns created user fields without exposing `password_hash`
+- `GET /api/v1/users` behavior:
+- returns list of users without password hashes
+- Added tests for required Task 7 scenarios:
+- admin can create user
+- non-admin cannot create user (`403`)
+- unauthenticated request denied (`401`)
+- list users response excludes `password_hash`
+- Manual Task 7 validation completed on temporary server using bootstrap DB:
+- admin login succeeded
+- created second user via `POST /api/v1/users` (`201`)
+- SQLite rows confirmed (`SELECT id,email,is_admin FROM users`)
+- list response verified to exclude password hash fields
+- Updated README with admin user management endpoint docs and example.
+
+Architectural decisions:
+- Decision: Implement explicit `RequireAdmin` middleware helper.
+  Reason: Keeps role checks consistent and reusable as additional admin-only routes are introduced.
+- Decision: Keep user-management API JSON-only and lightweight.
+  Reason: Aligns with minimal server design and avoids introducing complex admin UI at this stage.
+
+Files changed:
+- `internal/api/session_auth.go`
+- `internal/api/users.go`
+- `internal/api/users_test.go`
+- `internal/api/health.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'TestUsers_' -count=1`
+- `go test ./internal/api -run 'Test(LoadCurrentUserFromSession_|RequireUserSessionAuth_|RequireAdmin|LoginPageServed)' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18081 go run ./cmd/server`
+- `curl -sS -c /tmp/task7_cookie.txt -o /tmp/task7_login_body.txt -w "%{http_code}" -X POST http://127.0.0.1:18081/login -H "Content-Type: application/x-www-form-urlencoded" --data "email=admin@example.com&password=testpass"`
+- `curl -sS -b /tmp/task7_cookie.txt -o /tmp/task7_create_user.json -w "%{http_code}" -X POST http://127.0.0.1:18081/api/v1/users -H "Content-Type: application/json" --data '{"email":"user2@example.com","password":"user2pass","is_admin":false}'`
+- `sqlite3 ./data/task3bootstrap.db "SELECT id,email,is_admin FROM users ORDER BY id;"`
+- `curl -sS -b /tmp/task7_cookie.txt http://127.0.0.1:18081/api/v1/users`
+
+Pending:
+- Task 8: scope device list/read routes to current signed-in user ownership.
+- Task 9+: continue ownership and per-user data scoping tasks.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 03:42 UTC - Phase 58 (Task 8: Device Route Session Scope + Ownership Enforcement)
+Implemented:
+- Updated device route wiring to use session auth when user/session dependencies are present:
+- composed middleware for `/api/v1/devices*`:
+- `LoadCurrentUserFromSession`
+- `RequireUserSessionAuth`
+- Device route ownership behavior with session auth enabled:
+- `GET /api/v1/devices` returns only devices owned by current signed-in user
+- `GET /api/v1/devices/{id}` returns `404` for non-owner device ids (no cross-user enumeration leak)
+- `POST /api/v1/devices/{id}/rotate-key` returns `403` for non-owner
+- `POST /api/v1/devices` always associates new device with current session user id (ignores body `user_id`)
+- Kept compatibility fallback for test contexts without session/user dependencies (legacy behavior unchanged in those contexts).
+- Added Task 8-focused API tests for:
+- user sees only own devices
+- user cannot fetch another user's device
+- rotate key denied for non-owner
+- create uses session user ownership
+- Manual validation with two non-admin users:
+- user2 and user3 each created one device
+- list endpoint for each user returned only that user's device
+- cross-user direct GET returned `404` with `{"error":"device not found"}`
+- Updated README device management section with session-auth scoping semantics.
+
+Architectural decisions:
+- Decision: Scope device routes by ownership at API layer while reusing existing store interfaces.
+  Reason: Minimal change set for current task without broad store refactor; keeps behavior explicit and easy to audit.
+- Decision: Return `404` for non-owner device reads.
+  Reason: Avoids leaking resource existence across users.
+
+Files changed:
+- `internal/api/devices.go`
+- `internal/api/devices_test.go`
+- `internal/api/health.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'TestDevicesAPI_(UserSeesOnlyOwnDevices_WhenSessionAuthEnabled|UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled|RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled|CreateUsesCurrentSessionUser_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18082 go run ./cmd/server`
+- `curl -sS -c /tmp/t8_user2_cookie.txt -o /tmp/t8_user2_login.txt -w "%{http_code}" -X POST http://127.0.0.1:18082/login -H "Content-Type: application/x-www-form-urlencoded" --data "email=user2@example.com&password=user2pass"`
+- `curl -sS -c /tmp/t8_user3_cookie.txt -o /tmp/t8_user3_login.txt -w "%{http_code}" -X POST http://127.0.0.1:18082/login -H "Content-Type: application/x-www-form-urlencoded" --data "email=user3@example.com&password=user3pass"`
+- `curl -sS -b /tmp/t8_user2_cookie.txt -X POST http://127.0.0.1:18082/api/v1/devices -H "Content-Type: application/json" --data '{"name":"u2-phone","source_type":"owntracks","api_key":"u2-key-1"}'`
+- `curl -sS -b /tmp/t8_user3_cookie.txt -X POST http://127.0.0.1:18082/api/v1/devices -H "Content-Type: application/json" --data '{"name":"u3-phone","source_type":"owntracks","api_key":"u3-key-1"}'`
+- `curl -sS -b /tmp/t8_user2_cookie.txt http://127.0.0.1:18082/api/v1/devices`
+- `curl -sS -b /tmp/t8_user3_cookie.txt http://127.0.0.1:18082/api/v1/devices`
+- `curl -sS -o /tmp/t8_cross_get.txt -w "%{http_code}" -b /tmp/t8_user3_cookie.txt http://127.0.0.1:18082/api/v1/devices/1`
+
+Pending:
+- Task 9: finalize multi-user device creation model with explicit admin override policy where appropriate.
+- Task 10+: scope points/export/visits APIs to signed-in user.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 03:53 UTC - Phase 59 (Task 9: Device Ownership Model Finalization)
+Implemented:
+- Finalized device creation ownership model:
+- signed-in non-admin users can create only their own devices
+- admin users can create for another user when `user_id` is explicitly provided
+- API behavior changes in `POST /api/v1/devices` with session auth:
+- non-admin request with mismatched `user_id` now returns `403` (`cannot create device for another user`)
+- admin request with explicit `user_id` creates device for that target owner
+- Added/updated tests for Task 9:
+- non-admin cannot create device for another user (`403`)
+- admin can create device for specific user id
+- kept Task 8 ownership/scope tests passing
+- Manual Task 9 validation completed:
+- user2 self-created device row persisted with `user_id=2`
+- admin created device for user3 persisted with `user_id=3`
+- DB check confirmed ownership assignment via:
+- `SELECT id,user_id,name FROM devices ORDER BY id;`
+- Updated README device management section with explicit admin override behavior.
+
+Architectural decisions:
+- Decision: enforce cross-user create attempts at API layer with explicit admin gate.
+  Reason: simple and clear ownership policy while preserving single-writer/lightweight store behavior.
+- Decision: keep store interfaces unchanged (ownership enforcement in API layer for now).
+  Reason: minimizes refactor scope and keeps milestone progress incremental.
+
+Files changed:
+- `internal/api/devices.go`
+- `internal/api/devices_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'TestDevicesAPI_(CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled|AdminCanCreateForSpecificUser_WhenSessionAuthEnabled|UserSeesOnlyOwnDevices_WhenSessionAuthEnabled|UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled|RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18083 go run ./cmd/server`
+- `curl -sS -b /tmp/t9_user2_cookie.txt -X POST http://127.0.0.1:18083/api/v1/devices -H "Content-Type: application/json" --data '{"name":"u2-self-device","source_type":"owntracks","api_key":"u2-self-key"}'`
+- `curl -sS -X POST http://127.0.0.1:18083/api/v1/devices -H "Content-Type: application/json" -H "Cookie: plexplore_session=<admin-token>" --data '{"user_id":3,"name":"admin-created-for-u3","source_type":"owntracks","api_key":"u3-admin-key"}'`
+- `sqlite3 ./data/task3bootstrap.db "SELECT id,user_id,name FROM devices ORDER BY id;"`
+
+Pending:
+- Task 10: scope `/api/v1/points/recent` by signed-in user.
+- Task 11+: apply same user scoping pattern to points history/export/visits endpoints.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 03:58 UTC - Phase 60 (Task 10: Recent Points Session Scope)
+Implemented:
+- Scoped `GET /api/v1/points/recent` to authenticated signed-in user context.
+- Route registration now applies session middleware when dependencies are present:
+- `LoadCurrentUserFromSession`
+- `RequireUserSessionAuth`
+- Added ownership filtering for recent points:
+- resolves current user-owned devices
+- returns only points whose `device_id` is in that owned set
+- blocks cross-user leakage even when device filter attempts target another user's device
+- unauthenticated requests now return `401` for protected recent-points route
+- Added Task 10 API tests:
+- user sees only own recent points
+- cross-user device filter trick returns zero points
+- unauthenticated access denied
+- Manual Task 10 validation completed:
+- ingested points for user2/user3 devices via API keys
+- user2 recent query returned only user2 point(s)
+- user3 recent query returned only user3 point(s)
+- anonymous recent query returned `401` with authentication error
+- Updated README recent-points section with session/auth scoping notes.
+
+Architectural decisions:
+- Decision: Apply ownership filter at API layer using current user device set.
+  Reason: Minimal incremental change compatible with existing store interfaces while maintaining isolation guarantees.
+
+Files changed:
+- `internal/api/points.go`
+- `internal/api/points_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'TestRecentPointsEndpoint_(UserSeesOnlyOwnPoints_WhenSessionAuthEnabled|DeviceFilterTrickBlocked_WhenSessionAuthEnabled|UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestRecentPointsEndpoint_|TestPointsEndpoint_' -count=1`
+- `go test ./... -count=1`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18084 go run ./cmd/server`
+- `curl -sS -X POST http://127.0.0.1:18084/api/v1/owntracks -H "Content-Type: application/json" -H "X-API-Key: u2-key-1" -d '{"_type":"location","lat":41.1111,"lon":-87.1111,"tst":1776902400}'`
+- `curl -sS -X POST http://127.0.0.1:18084/api/v1/owntracks -H "Content-Type: application/json" -H "X-API-Key: u3-key-1" -d '{"_type":"location","lat":42.2222,"lon":-88.2222,"tst":1776902460}'`
+- `curl -sS -b /tmp/t10_u2_cookie.txt "http://127.0.0.1:18084/api/v1/points/recent?limit=10"`
+- `curl -sS -b /tmp/t10_u3_cookie.txt "http://127.0.0.1:18084/api/v1/points/recent?limit=10"`
+- `curl -sS -o /tmp/t10_anon_recent.txt -w "%{http_code}" "http://127.0.0.1:18084/api/v1/points/recent?limit=10"`
+
+Pending:
+- Task 11: scope point history/map endpoints to current signed-in user.
+- Task 12+: scope export and visit endpoints similarly.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:05 UTC - Phase 61 (Task 11: Point History Session Scope)
+Implemented:
+- Scoped `GET /api/v1/points` to session-authenticated users when auth dependencies are present.
+- Route now composes:
+- `LoadCurrentUserFromSession`
+- `RequireUserSessionAuth`
+- Added ownership filtering for point history:
+- resolves current user-owned device IDs from `DeviceStore`
+- applies device ownership gate for explicit `device_id` filter (cross-user filter returns empty result)
+- post-filters returned points to current user's device set
+- Added Task 11 tests:
+- `TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled`
+- `TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled`
+- `TestPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled`
+- Updated README point history docs to note session requirement and user scoping.
+
+Architectural decisions:
+- Decision: Keep per-user scoping at API layer using existing store interfaces.
+  Reason: Minimal, low-risk change consistent with current architecture and avoids broad store refactor.
+
+Files changed:
+- `internal/api/points.go`
+- `internal/api/points_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/points.go internal/api/points_test.go`
+- `go test ./internal/api -run 'TestPointsEndpoint_(DefaultQuery|RangeFiltering|DeviceFiltering|InvalidQueryParams|UserSeesOnlyOwnPoints_WhenSessionAuthEnabled|DeviceFilterTrickBlocked_WhenSessionAuthEnabled|UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 12: scope export endpoints to signed-in user.
+- Task 13: scope visits endpoints/generation to signed-in user.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:10 UTC - Phase 62 (Task 12: Export Endpoint Session Scope)
+Implemented:
+- Scoped export routes when auth dependencies are present:
+- `GET /api/v1/exports/geojson`
+- `GET /api/v1/exports/gpx`
+- Routes now require signed-in user session via:
+- `LoadCurrentUserFromSession`
+- `RequireUserSessionAuth`
+- Added user ownership filtering for export output:
+- explicit cross-user `device_id` filter returns empty export payload
+- unfiltered exports are post-filtered to current user's devices only
+- Added focused export isolation tests:
+- `TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled`
+- `TestGeoJSONExport_UnauthenticatedDenied_WhenSessionAuthEnabled`
+- `TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled`
+- Updated README export sections with session/auth scoping notes.
+
+Architectural decisions:
+- Decision: Apply export data isolation in route handlers using current-user device ownership map.
+  Reason: Keeps implementation lightweight, deterministic, and consistent with existing point/recent scoping approach.
+
+Files changed:
+- `internal/api/exports.go`
+- `internal/api/exports_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/exports.go internal/api/exports_test.go`
+- `go test ./internal/api -run 'Test(GeoJSONExport_|GPXExport_)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 13: scope visits endpoints/generation to signed-in user.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:16 UTC - Phase 63 (Task 13: Visits Endpoint Session Scope)
+Implemented:
+- Updated visit route registration to use dependency-based auth routing with session protection when available.
+- Scoped both visit endpoints to signed-in user session:
+- `POST /api/v1/visits/generate`
+- `GET /api/v1/visits`
+- Visit ownership behavior:
+- generation is allowed only for devices owned by current signed-in user
+- cross-user `device_id` in generate returns `404` (`device not found`)
+- list results are filtered to current user's devices
+- explicit cross-user `device_id` in list returns empty result
+- Added Task 13 tests:
+- `TestListVisitsEndpoint_UserSeesOnlyOwnVisits_WhenSessionAuthEnabled`
+- `TestGenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled`
+- `TestVisitsEndpoints_UnauthenticatedDenied_WhenSessionAuthEnabled`
+- Updated README visit generation/list docs to note session requirement and user scoping.
+
+Architectural decisions:
+- Decision: Enforce visit authorization through device ownership checks before calling visit generation/list store operations.
+  Reason: Keeps access control centralized at API layer and avoids cross-user data leakage without store schema changes.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/visits.go`
+- `internal/api/visits_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/visits.go internal/api/visits_test.go internal/api/health.go`
+- `go test ./internal/api -run 'Test(GenerateVisitsEndpoint_|ListVisitsEndpoint|ListVisitsEndpoint_InvalidParams|ListVisitsEndpoint_WithVisitLabelResolver|ListVisitsEndpoint_UserSeesOnlyOwnVisits_WhenSessionAuthEnabled|GenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled|VisitsEndpoints_UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 14: protect UI pages with signed-in indicator and logout control.
+- Task 15: verify device API key ingest auth correctness in multi-user mode.
+- Task 16: add broader authorization/isolation integration coverage.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:28 UTC - Phase 64 (Task 14: Session-Aware UI Header/Logout)
+Implemented:
+- Updated lightweight UI pages (`/`, `/ui/status`, `/ui/map`) to include:
+- signed-in user email indicator in top bar
+- logout form/button posting to `POST /logout`
+- Added a small render helper to inject current user email from session context into static UI HTML.
+- Kept existing dark mode toggle and map/status functionality unchanged.
+- Added/updated UI tests to validate:
+- top bar includes session user indicator
+- logout control exists
+- valid session rendering includes current user email
+- Updated README minimal UI section with session-aware header/logout note.
+
+Architectural decisions:
+- Decision: Keep UI pages as static HTML strings with lightweight placeholder substitution for current user email.
+  Reason: Preserves no-build/no-framework constraints and keeps runtime overhead minimal on Raspberry Pi.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|UIRoutesRequireSession_WhenSessionDepsProvided|UIRoutesAllowSession_WhenValidSessionCookiePresent|StatusPage_DoesNotMatchTypoPath)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 15: verify device API key ingest auth remains correct in multi-user mode.
+- Task 16: add full authorization/isolation integration tests across app.
+- Task 17+: optional admin UI and hardening tasks.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:41 UTC - Phase 65 (Task 15: Device API Key Ingest Ownership Hardening)
+Implemented:
+- Hardened SQLite ingest commit path to preserve authenticated owner context:
+- `InsertSpoolBatch` now honors `record.Point.UserID` when present (fallback to default user only when absent/invalid).
+- `ensureDevice` now resolves device by `(user_id, name)` first, then creates fallback device with user-scoped key (`auto:<user_id>:<device>`), preventing cross-user collisions.
+- Added integration coverage for multi-user ingest key isolation:
+- valid key ingest for two users with same device name persists rows under the correct owning `user_id` and `device_id`
+- no fallback auto-devices are created when managed devices already exist
+- invalid API key request returns `401` and persists no rows
+- Updated store tests to align with user-scoped fallback key format.
+- Updated README ingest section with explicit multi-user ownership behavior note.
+
+Architectural decisions:
+- Decision: Resolve ingest device ownership by `(user_id, device_name)` and use user-scoped fallback key format.
+  Reason: Ensures API-key-authenticated ingest persists to the correct owner/device in shared multi-user instances, even when device names overlap.
+
+Files changed:
+- `internal/store/sqlite_store.go`
+- `internal/store/sqlite_store_test.go`
+- `internal/tasks/ingest_pipeline_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/sqlite_store.go internal/tasks/ingest_pipeline_integration_test.go internal/store/sqlite_store_test.go`
+- `go test ./internal/tasks -run 'TestIntegration_(DeviceAPIKeyIngestPersistsUnderCorrectOwnerAndDevice|InvalidDeviceAPIKeyRejected_NoDataPersisted)' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_InsertSpoolBatch_(Success|PartialDuplicates|MultipleDevices)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 16: add full authorization/isolation integration coverage across user workflows.
+- Task 17: add lightweight admin user management UI page.
+- Task 18: final hardening/documentation pass.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:51 UTC - Phase 66 (Task 16: Authorization Isolation Integration Coverage)
+Implemented:
+- Added full integration test coverage for multi-user authorization boundaries:
+- admin login + admin user creation via `POST /api/v1/users`
+- separate user sessions and per-user device creation
+- device API key ingest for each user
+- non-owner rotate key denial (`403`)
+- per-user isolation on `/api/v1/devices`, `/api/v1/points`, and `/api/v1/exports/geojson`
+- DB-level ownership verification (`raw_points.user_id` matches owning device/user mapping)
+- Added dedicated integration test:
+- `TestIntegration_MultiUserAuthorizationIsolation`
+- Hardened API-layer user scoping for points/exports against same-name device collisions across users:
+- store point projections now include persisted `user_id`
+- points/recent and export handlers now enforce both:
+- allowed device membership
+- matching persisted point owner `user_id == current session user id`
+- Updated README with explicit note that point/export scoping is enforced by persisted ownership IDs even when device names overlap.
+
+Architectural decisions:
+- Decision: Use persisted row ownership (`raw_points.user_id`) in addition to device-name allowlists for user-scoped point/export filtering.
+  Reason: Device names are not globally unique in multi-user deployments; owner-ID checks prevent same-name cross-user leakage while keeping current APIs lightweight.
+
+Files changed:
+- `internal/tasks/multi_user_auth_integration_test.go` (new)
+- `internal/store/points.go`
+- `internal/api/points.go`
+- `internal/api/exports.go`
+- `internal/api/points_test.go`
+- `internal/api/exports_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/multi_user_auth_integration_test.go internal/store/points.go internal/api/points.go internal/api/exports.go internal/api/points_test.go internal/api/exports_test.go`
+- `go test ./internal/tasks -run 'TestIntegration_(MultiUserAuthorizationIsolation|DeviceAPIKeyIngestPersistsUnderCorrectOwnerAndDevice|InvalidDeviceAPIKeyRejected_NoDataPersisted)' -count=1`
+- `go test ./internal/api -run 'Test(PointsEndpoint_|RecentPointsEndpoint_|GeoJSONExport_|GPXExport_)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 17: add lightweight admin user management page.
+- Task 18: final hardening pass (cookie/session defaults, CSRF review, docs/manual checklist).
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 04:54 UTC - Phase 67 (Task 17: Admin User Management UI)
+Implemented:
+- Added lightweight admin-only user management page:
+- route: `GET /ui/admin/users`
+- page lists users through existing `GET /api/v1/users`
+- page creates users through existing `POST /api/v1/users`
+- added simple form (email/password/is_admin), status messaging, and table rendering
+- Added route protection for admin UI page:
+- session required
+- admin role required (`403` for non-admin)
+- Extended status/map top bars to include optional admin navigation link when current user is admin.
+- Kept implementation lightweight (server-rendered HTML + plain JS, no framework/build step).
+- Added UI tests:
+- admin session can load `/ui/admin/users`
+- non-admin session is denied (`403`)
+- Updated README with admin users page usage notes.
+
+Architectural decisions:
+- Decision: Reuse existing admin JSON APIs from a minimal server-rendered admin page rather than adding a separate backend path.
+  Reason: Keeps implementation small, testable, and consistent with current low-overhead UI architecture.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|UIRoutesRequireSession_WhenSessionDepsProvided|UIRoutesAllowSession_WhenValidSessionCookiePresent|AdminUsersPageServedForAdminSession|AdminUsersPageDeniedForNonAdminSession)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Task 18: final hardening pass (session/cookie defaults, CSRF for form POSTs, sensitive-response review, final docs checklist).
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 05:03 UTC - Phase 68 (Task 18: Final Hardening and Docs)
+Implemented:
+- Added lightweight CSRF protection primitives:
+- `plexplore_csrf` cookie generation and token helpers (`internal/api/csrf.go`)
+- request token validation via hidden form field (`csrf_token`) or `X-CSRF-Token` header
+- Enforced CSRF validation on form/session-sensitive POST routes:
+- `POST /login`
+- `POST /logout`
+- `POST /api/v1/users` (admin create-user)
+- Updated UI/login pages to include CSRF tokens:
+- login page now renders hidden `csrf_token` field
+- status/map/admin pages logout forms now include hidden `csrf_token`
+- admin users page create-user fetch now sends `X-CSRF-Token` header
+- Updated auth integration helper flows to acquire CSRF token from `/login` before posting credentials/admin actions.
+- Added/updated tests:
+- login page includes CSRF field
+- login success/invalid/logout flows include CSRF token handling
+- missing CSRF on login is rejected (`403`)
+- admin create user without CSRF is rejected (`403`)
+- UI tests assert CSRF token presence in logout forms/admin script header usage
+- Ran full regression suite (`go test ./...`) successfully.
+- Updated README hardening notes with session cookie and CSRF behavior.
+
+Architectural decisions:
+- Decision: Use synchronized CSRF cookie + request token (hidden field/header) for form/lightweight JS routes.
+  Reason: Adds practical CSRF mitigation without heavy dependencies and fits server-rendered/plain-JS architecture on Raspberry Pi.
+
+Files changed:
+- `internal/api/csrf.go` (new)
+- `internal/api/login.go`
+- `internal/api/users.go`
+- `internal/api/ui.go`
+- `internal/api/login_test.go`
+- `internal/api/users_test.go`
+- `internal/api/ui_test.go`
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/csrf.go internal/api/login.go internal/api/users.go internal/api/ui.go internal/api/login_test.go internal/api/users_test.go internal/api/ui_test.go internal/tasks/multi_user_auth_integration_test.go`
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession|LoginRejectsMissingCSRFToken|Users_|StatusPageServedAtRoot|MapPageServedAtUIMap|AdminUsersPageServedForAdminSession|AdminUsersPageDeniedForNonAdminSession)' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_MultiUserAuthorizationIsolation' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Multi-user auth milestone tasks are complete (1-18).
+- Next work should focus on deployment/manual validation on Raspberry Pi and post-hardening operational checks.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

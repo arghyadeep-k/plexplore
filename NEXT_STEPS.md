@@ -1,12 +1,12 @@
 # Next Steps
 
 ## Current milestone
-Stabilize UI theme behavior and optional reverse-geocode cache follow-ups
+Multi-user authentication milestone complete (Tasks 1-18 complete)
 
 ## Next 3 tasks
-1. Add integration-style `GET /api/v1/visits` test with real SQLite cache entries (`place_label` returned for cached centroids)
-2. Add optional live system-theme change handling when no explicit local preference is saved
-3. Continue flusher durability hardening for checkpoint-failure requeue behavior without redesigning pipeline
+1. Run end-to-end manual checklist on target Raspberry Pi deployment
+2. Monitor logs for session/CSRF validation failures in real traffic
+3. Define the next feature milestone beyond auth hardening
 
 ## Commands
 - `go test ./...`
@@ -18,10 +18,28 @@ Stabilize UI theme behavior and optional reverse-geocode cache follow-ups
 - `go test ./internal/api -run 'TestGenerateVisitsEndpoint_|TestListVisitsEndpoint' -count=1`
 - `go test ./internal/api -run 'Test(ListVisitsEndpoint|ListVisitsEndpoint_InvalidParams|GenerateVisitsEndpoint_)' -count=1`
 - `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|StatusPage_DoesNotMatchTypoPath)' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_(DeviceAPIKeyIngestPersistsUnderCorrectOwnerAndDevice|InvalidDeviceAPIKeyRejected_NoDataPersisted)' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_MultiUserAuthorizationIsolation' -count=1`
+- `go test ./internal/api -run 'Test(AdminUsersPageServedForAdminSession|AdminUsersPageDeniedForNonAdminSession)' -count=1`
+- `go test ./internal/api -run 'Test(HashAndVerifyPassword|VerifyPassword_WrongPasswordFails|HashPassword_EmptyRejected)' -count=1`
+- `go test ./cmd/migrate -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateGetDeleteSession|GetSession_Expired)' -count=1`
+- `go test ./internal/api -run 'TestLoadCurrentUserFromSession_' -count=1`
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession)' -count=1`
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession|LoginRejectsMissingCSRFToken|Users_)' -count=1`
+- `go test ./internal/api -run 'Test(LoadCurrentUserFromSession_|RequireUserSessionAuth_|RequireUserSessionAuthHTML_|UIRoutesRequireSession_|UIRoutesAllowSession_)' -count=1`
+- `go test ./internal/api -run 'TestUsers_' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_(UserSeesOnlyOwnDevices_WhenSessionAuthEnabled|UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled|RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled|CreateUsesCurrentSessionUser_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_(CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled|AdminCanCreateForSpecificUser_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestRecentPointsEndpoint_(UserSeesOnlyOwnPoints_WhenSessionAuthEnabled|DeviceFilterTrickBlocked_WhenSessionAuthEnabled|UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'TestPointsEndpoint_(UserSeesOnlyOwnPoints_WhenSessionAuthEnabled|DeviceFilterTrickBlocked_WhenSessionAuthEnabled|UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'Test(GeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled|GeoJSONExport_UnauthenticatedDenied_WhenSessionAuthEnabled|GPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled)' -count=1`
+- `go test ./internal/api -run 'Test(ListVisitsEndpoint_UserSeesOnlyOwnVisits_WhenSessionAuthEnabled|GenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled|VisitsEndpoints_UnauthenticatedDenied_WhenSessionAuthEnabled)' -count=1`
 - `go test ./internal/store -run 'TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder' -count=1`
 - `go test ./internal/store -run 'TestVisitDetection_' -count=1`
 - `go test ./internal/store -run 'TestListVisits_FilterByTimeRange' -count=1`
 - `go test ./internal/store -run 'TestVisitPlaceCache_UpsertAndRead' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateAndGetUserByEmail|ListUsers|GetUserNotFound|UsersSchemaHasAuthFields)' -count=1`
 - `go test ./internal/visits -count=1`
 - `go test ./internal/api -run 'TestIngestOwnTracks_(NoPressure_DoesNotTriggerFlush|PointPressure_TriggersFlush|BytePressure_TriggersFlush)' -count=1`
 - `go test ./internal/api -run 'TestListVisitsEndpoint_WithVisitLabelResolver' -count=1`
@@ -32,8 +50,11 @@ Stabilize UI theme behavior and optional reverse-geocode cache follow-ups
 - `docker compose up --build`
 - `docker compose down`
 - `make migrate`
+- `APP_SQLITE_PATH=./data/task1fresh.db make migrate`
+- `APP_SQLITE_PATH=./data/task3bootstrap.db make migrate`
 - `sqlite3 ./data/plexplore.db ".schema visits"`
 - `sqlite3 ./data/plexplore.db ".schema visit_place_cache"`
+- `sqlite3 ./data/task1fresh.db ".schema users"`
 - `go run ./cmd/server`
 - `curl -sS http://127.0.0.1:8080/health`
 - `curl -sS http://127.0.0.1:8080/status`
@@ -59,7 +80,7 @@ Tune behavior through env config (segment size, fsync mode/interval/threshold, b
 Run `make migrate` before server run against a fresh database to ensure required tables exist.
 .gitignore baseline is now present; runtime state (`data/`) and `node_modules/` are ignored to avoid accidental commits.
 On transient SQLite failure, keep drained records by requeueing them to the RAM buffer front.
-Current auth assumption is single-user deployment; device records are keyed by API key.
+Current auth model is multi-user with admin-created accounts and per-user data isolation.
 Device create/rotate responses return full `api_key` once; list/read responses only return masked `api_key_preview`.
 Ingest handlers do not write directly to SQLite; they only parse -> spool -> RAM buffer.
 Ingest now triggers best-effort async flush when `APP_FLUSH_TRIGGER_POINTS` or `APP_FLUSH_TRIGGER_BYTES` threshold is crossed.
@@ -71,6 +92,24 @@ Visits are generated on-demand through `POST /api/v1/visits/generate` with bound
 `GET /api/v1/visits` now supports optional `device_id`, `from`, `to`, and `limit` for compact list/filtering.
 Optional reverse geocode label enrichment is available for visit centroids on `GET /api/v1/visits` when `APP_REVERSE_GEOCODE_ENABLED=true`.
 Reverse geocode cache persists in SQLite table `visit_place_cache`; provider calls are capped per request by `APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST`.
+Task 1 of multi-user auth milestone is complete: users auth columns + user store methods now exist (`CreateUser`, `GetUserByEmail`, `GetUserByID`, `ListUsers`).
+Task 2 is complete: bcrypt password helpers are available (`HashPassword`, `VerifyPassword`) with empty-password validation.
+Task 3 is complete: admin bootstrap now supported via `go run ./cmd/migrate --create-admin --email ... --password ...` (no public signup).
+Task 4 is complete: SQLite-backed sessions and current-user session loader middleware primitives are in place.
+Task 5 is complete: `/login` and `/logout` flows now issue/delete server-side session cookies for admin-created users.
+Task 6 is complete: auth-required helper middleware exists, and UI routes now require session with anonymous redirect to `/login`.
+Task 7 is complete: admin-only `GET/POST /api/v1/users` endpoints are implemented with role enforcement and no password_hash exposure.
+Task 8 is complete: device routes are session-authenticated and scoped to current user ownership (list/read/rotate/create behavior adjusted).
+Task 9 is complete: device ownership model finalized (user self-create by default, admin override via `user_id`).
+Task 10 is complete: `/api/v1/points/recent` is session-authenticated and scoped to current user's devices.
+Task 11 is complete: `/api/v1/points` history endpoint is now session-authenticated and scoped to current user's devices.
+Task 12 is complete: `/api/v1/exports/geojson` and `/api/v1/exports/gpx` are session-authenticated and scoped to current user's devices.
+Task 13 is complete: `/api/v1/visits` and `/api/v1/visits/generate` are session-authenticated and scoped to current user's device ownership.
+Task 14 is complete: protected UI pages now render a signed-in user indicator and logout control.
+Task 15 is complete: device API key ingest remains session-independent and now persists points under the correct owning user/device in multi-user mode.
+Task 16 is complete: full multi-user authorization/isolation integration coverage now verifies login separation, per-user devices/points/exports, ingest ownership, and non-owner rotate denial.
+Task 17 is complete: admin-only user management UI page is now available at `/ui/admin/users`.
+Task 18 is complete: CSRF validation and cookie/session hardening are now enforced for login/logout/admin user creation.
 GeoJSON export is available at `GET /api/v1/exports/geojson` with optional `from`, `to`, and `device_id`.
 GPX export is available at `GET /api/v1/exports/gpx` with optional `from`, `to`, and `device_id`.
 Operational status endpoint is `GET /api/v1/status` (lightweight JSON, no Prometheus).
@@ -96,3 +135,13 @@ Minimal web UI now also shows recent points preview from `/api/v1/points/recent?
 Raspberry Pi deployment templates now exist under `deploy/systemd/` with installer `scripts/install_systemd.sh`.
 Docker setup now exists with `Dockerfile`, `.dockerignore`, `compose.yaml`, and `scripts/docker-entrypoint.sh` (runs migrate then server).
 Task sequence in `codex_tasks.md` is complete through Task 7.
+Current active sequence is the newer 18-task multi-user auth plan in `codex_tasks.md`; continue strictly in order from Task 2.
+Continue strictly in order from Task 3 next.
+Continue strictly in order from Task 4 next.
+Continue strictly in order from Task 5 next.
+Continue strictly in order from Task 7 next.
+Continue strictly in order from Task 8 next.
+Continue strictly in order from Task 10 next.
+Continue strictly in order from Task 11 next.
+Continue strictly in order from Task 9 next.
+Continue strictly in order from Task 6 next.
