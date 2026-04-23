@@ -44,6 +44,9 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if !strings.Contains(body, `name="csrf_token"`) {
 		t.Fatalf("expected csrf token field in status page logout form, got %q", body)
 	}
+	if !strings.Contains(body, `id="status_to_map_link"`) || !strings.Contains(body, `href="/ui/map"`) {
+		t.Fatalf("expected map navigation link on status page, got %q", body)
+	}
 	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
 		t.Fatalf("expected dark mode persistence/system preference hooks in status page, got %q", body)
 	}
@@ -119,6 +122,9 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	}
 	if !strings.Contains(body, `name="csrf_token"`) {
 		t.Fatalf("expected csrf token field in map page logout form, got %q", body)
+	}
+	if !strings.Contains(body, `id="map_to_status_link"`) || !strings.Contains(body, `href="/ui/status"`) {
+		t.Fatalf("expected status navigation link on map page, got %q", body)
 	}
 	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
 		t.Fatalf("expected dark mode persistence/system preference hooks in map page, got %q", body)
@@ -203,8 +209,8 @@ func TestAdminUsersPageServedForAdminSession(t *testing.T) {
 		t.Fatalf("expected 200 for admin users page, got %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Admin Users") {
-		t.Fatalf("expected admin users title in body, got %q", body)
+	if !strings.Contains(body, "<title>Plexplore Users</title>") || !strings.Contains(body, "<h1>Users</h1>") {
+		t.Fatalf("expected users page title/heading in body, got %q", body)
 	}
 	if !strings.Contains(body, "/api/v1/users") {
 		t.Fatalf("expected admin users API usage in body, got %q", body)
@@ -212,8 +218,78 @@ func TestAdminUsersPageServedForAdminSession(t *testing.T) {
 	if !strings.Contains(body, "X-CSRF-Token") {
 		t.Fatalf("expected csrf header usage in admin users page script, got %q", body)
 	}
+	if !strings.Contains(body, `id="theme_toggle"`) {
+		t.Fatalf("expected theme toggle on users page, got %q", body)
+	}
+	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
+		t.Fatalf("expected dark mode hooks on users page, got %q", body)
+	}
 	if !strings.Contains(body, "admin@example.com") {
 		t.Fatalf("expected current admin email in body, got %q", body)
+	}
+}
+
+func TestStatusPage_AdminLinkStillRendersForAdminSession(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-admin": {Token: "tok-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/status", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-admin"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin status page, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="admin_users_link"`) || !strings.Contains(body, `href="/ui/admin/users"`) {
+		t.Fatalf("expected existing admin users nav link on status page, got %q", body)
+	}
+	if !strings.Contains(body, ">Users</a>") {
+		t.Fatalf("expected Users nav label on status page, got %q", body)
+	}
+}
+
+func TestMapPage_AdminLinkLabelIsUsersForAdminSession(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-admin": {Token: "tok-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/map", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-admin"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin map page, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="admin_users_link"`) || !strings.Contains(body, `href="/ui/admin/users"`) {
+		t.Fatalf("expected users nav link on map page, got %q", body)
+	}
+	if !strings.Contains(body, ">Users</a>") {
+		t.Fatalf("expected Users nav label on map page, got %q", body)
 	}
 }
 

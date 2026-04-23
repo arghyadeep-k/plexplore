@@ -3025,3 +3025,70 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 05:43 UTC - Phase 71 (Status/Map Cross-Navigation Buttons)
+Implemented:
+- Added top-navigation cross-links for easier UI switching:
+- status page now renders a `Map` nav button/link (`id="status_to_map_link"`, `href="/ui/map"`)
+- map page now renders a `Status` nav button/link (`id="map_to_status_link"`, `href="/ui/status"`)
+- Kept styling/placement consistent with existing `Admin Users` nav link (`nav-link` in `top-actions`).
+- Preserved existing admin navigation behavior; added coverage that admin link still renders for admin session.
+- No unrelated auth/ingest/page behavior was changed.
+
+Architectural decisions:
+- Decision: Reuse existing top-bar `nav-link` styling and static HTML links in status/map templates.
+  Reason: Minimal, lightweight change aligned with plain HTML/CSS/vanilla JS UI approach.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|StatusPage_AdminLinkStillRendersForAdminSession|AdminUsersPageServedForAdminSession|AdminUsersPageDeniedForNonAdminSession)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Manual browser check in deployed environment to confirm navigation ergonomics and keyboard/tab flow.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 05:47 UTC - Phase 72 (Users Page Rename + Dark Mode)
+Implemented:
+- Renamed visible Users-management UI labels from "Admin Users" to "Users":
+- page title changed to `Plexplore Users`
+- page heading changed to `Users`
+- top-nav admin link label on status/map pages changed from `Admin Users` to `Users`
+- Kept routes unchanged (`GET /ui/admin/users`) to avoid breaking existing navigation/API integrations.
+- Added shared dark mode behavior to the Users page to match status/map:
+- added theme toggle button in top bar (`id="theme_toggle"`)
+- added `localStorage` preference persistence and system preference fallback (`prefers-color-scheme`)
+- added light/dark CSS variable sets covering background, text, cards, table/form controls, links/buttons, and status text colors.
+- Kept existing Users page functionality/layout intact; only label/theme/navigation polish was applied.
+
+Architectural decisions:
+- Decision: Reuse existing page-local theme toggle pattern used by status/map pages.
+  Reason: Keeps implementation lightweight and consistent without introducing a separate theming system.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|AdminUsersPageServedForAdminSession|StatusPage_AdminLinkStillRendersForAdminSession|MapPage_AdminLinkLabelIsUsersForAdminSession|AdminUsersPageDeniedForNonAdminSession)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Manual browser validation in deployed environment for Users page dark mode and nav label readability.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

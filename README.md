@@ -522,7 +522,7 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - recent points preview
 - dark mode toggle (sun/moon) with localStorage persistence and system-preference fallback
 - signed-in user email indicator and logout control in the top bar (session-aware UI)
-- admin-only user management page at `GET /ui/admin/users` for listing users and creating admin-created accounts
+- admin-only user management page at `GET /ui/admin/users` (shown as "Users" in UI) for listing users and creating admin-created accounts
 - logout actions in UI pages include CSRF hidden token fields
 
 Map page notes:
@@ -536,12 +536,13 @@ Map page notes:
 - defaults to a recent 7-day range when no date filters are set
 - includes the same dark mode toggle with saved preference behavior
 
-Admin users page notes:
+Users page notes:
 - route: `GET /ui/admin/users` (admin session required)
 - lists users via `GET /api/v1/users`
 - creates users via `POST /api/v1/users`
 - creates users with CSRF header (`X-CSRF-Token`) derived from current UI session
 - no public self-signup is introduced
+- supports the same dark mode toggle behavior used on status/map pages
 
 ## Security Hardening Notes
 

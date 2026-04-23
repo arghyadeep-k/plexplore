@@ -160,6 +160,7 @@ const statusPageHTML = `<!doctype html>
       <h1>Plexplore Status</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        <a id="status_to_map_link" class="nav-link" href="/ui/map">Map</a>
         __ADMIN_LINK__
         <form method="post" action="/logout" style="margin:0;">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
@@ -525,6 +526,7 @@ const mapPageHTML = `<!doctype html>
       <h1>Plexplore Map</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        <a id="map_to_status_link" class="nav-link" href="/ui/status">Status</a>
         __ADMIN_LINK__
         <form method="post" action="/logout" style="margin:0;">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
@@ -836,7 +838,7 @@ const adminUsersPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Admin Users</title>
+  <title>Plexplore Users</title>
   <style>
     :root {
       --bg: #f4f6f8;
@@ -845,8 +847,26 @@ const adminUsersPageHTML = `<!doctype html>
       --text: #1b1f24;
       --muted: #5a6573;
       --accent: #0b6bcb;
+      --ok: #188038;
+      --bad: #b42318;
       --border: #d7dde5;
       --shadow: rgba(9, 30, 66, 0.06);
+      --toggle-bg: #ffffff;
+      --toggle-text: #1b1f24;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0f141a;
+      --bg-top: #18212c;
+      --card: #151c24;
+      --text: #e8edf3;
+      --muted: #a8b4c0;
+      --accent: #5ba3ff;
+      --ok: #48c774;
+      --bad: #ff7b72;
+      --border: #2a3440;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --toggle-bg: #1e2732;
+      --toggle-text: #e8edf3;
     }
     * { box-sizing: border-box; }
     body {
@@ -885,6 +905,21 @@ const adminUsersPageHTML = `<!doctype html>
       padding: 6px 10px;
       cursor: pointer;
     }
+    .theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--toggle-bg);
+      color: var(--toggle-text);
+      border-radius: 999px;
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .theme-toggle[aria-pressed="true"] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -918,12 +953,14 @@ const adminUsersPageHTML = `<!doctype html>
       font-size: 14px;
     }
     .muted { color: var(--muted); }
+    #create_status.status-success { color: var(--ok); }
+    #create_status.status-error { color: var(--bad); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="topbar">
-      <h1>Admin Users</h1>
+      <h1>Users</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a class="nav-link" href="/ui/status">Status</a>
@@ -932,6 +969,7 @@ const adminUsersPageHTML = `<!doctype html>
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
         </form>
+        <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
       </div>
     </div>
 
@@ -958,7 +996,37 @@ const adminUsersPageHTML = `<!doctype html>
   </div>
 
   <script>
+    const THEME_KEY = "plexplore.theme";
     const CSRF_TOKEN = "__CSRF_TOKEN__";
+
+    function preferredTheme() {
+      const stored = localStorage.getItem(THEME_KEY);
+      if (stored === "light" || stored === "dark") return stored;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+      const root = document.documentElement;
+      root.setAttribute("data-theme", theme);
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      const isDark = theme === "dark";
+      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+      btn.textContent = isDark ? "☀" : "🌙";
+      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+    }
+
+    function initThemeToggle() {
+      applyTheme(preferredTheme());
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        const next = current === "dark" ? "light" : "dark";
+        localStorage.setItem(THEME_KEY, next);
+        applyTheme(next);
+      });
+    }
 
     function escapeHTML(value) {
       return String(value).replace(/[&<>'"]/g, (ch) => ({
@@ -988,9 +1056,11 @@ const adminUsersPageHTML = `<!doctype html>
       const password = document.getElementById("password").value.trim();
       const isAdmin = document.getElementById("is_admin").checked;
       if (!email || !password) {
+        status.className = "status-error";
         status.textContent = "Email and password are required.";
         return;
       }
+      status.className = "muted";
       status.textContent = "Creating...";
       const res = await fetch("/api/v1/users", {
         method: "POST",
@@ -1002,9 +1072,11 @@ const adminUsersPageHTML = `<!doctype html>
       });
       if (!res.ok) {
         const text = await res.text();
+        status.className = "status-error";
         status.textContent = "Create failed: " + text;
         return;
       }
+      status.className = "status-success";
       status.textContent = "User created.";
       document.getElementById("email").value = "";
       document.getElementById("password").value = "";
@@ -1015,10 +1087,12 @@ const adminUsersPageHTML = `<!doctype html>
     document.getElementById("create_btn").addEventListener("click", () => {
       createUser().catch((err) => {
         const status = document.getElementById("create_status");
+        status.className = "status-error";
         status.textContent = "Create failed: " + err.message;
       });
     });
 
+    initThemeToggle();
     loadUsers().catch((err) => {
       const body = document.getElementById("users_body");
       body.innerHTML = "<tr><td colspan='4' class='muted'>Load failed: " + escapeHTML(err.message) + "</td></tr>";
@@ -1076,7 +1150,7 @@ func renderUIPage(page string, r *http.Request, csrfToken string) string {
 			userEmail = trimmed
 		}
 		if currentUser.IsAdmin {
-			adminLink = `<a id="admin_users_link" class="nav-link" href="/ui/admin/users">Admin Users</a>`
+			adminLink = `<a id="admin_users_link" class="nav-link" href="/ui/admin/users">Users</a>`
 		}
 	}
 	rendered := strings.ReplaceAll(page, "__USER_EMAIL__", html.EscapeString(userEmail))

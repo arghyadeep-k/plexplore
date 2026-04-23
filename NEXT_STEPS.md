@@ -29,6 +29,8 @@ Multi-user authentication milestone complete (Tasks 1-18 complete)
 - `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession|LoginRejectsMissingCSRFToken|Users_)' -count=1`
 - `go test ./internal/api -run 'Test(LoginInvalidCredentials|LoginInvalidCredentials_JSONStillReturnsJSON)' -count=1`
 - `go test ./internal/api -run 'Test(LoginSuccessSetsSessionCookie|LoginSuccess_WithNextParamRedirectsToRequestedPage|RequireUserSessionAuthHTML_RedirectWhenAnonymous|UIRoutesRequireSession_WhenSessionDepsProvided)' -count=1`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|StatusPage_AdminLinkStillRendersForAdminSession)' -count=1`
+- `go test ./internal/api -run 'Test(AdminUsersPageServedForAdminSession|StatusPage_AdminLinkStillRendersForAdminSession|MapPage_AdminLinkLabelIsUsersForAdminSession)' -count=1`
 - `go test ./internal/api -run 'Test(LoadCurrentUserFromSession_|RequireUserSessionAuth_|RequireUserSessionAuthHTML_|UIRoutesRequireSession_|UIRoutesAllowSession_)' -count=1`
 - `go test ./internal/api -run 'TestUsers_' -count=1`
 - `go test ./internal/api -run 'TestDevicesAPI_(UserSeesOnlyOwnDevices_WhenSessionAuthEnabled|UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled|RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled|CreateUsesCurrentSessionUser_WhenSessionAuthEnabled)' -count=1`
@@ -114,6 +116,8 @@ Task 17 is complete: admin-only user management UI page is now available at `/ui
 Task 18 is complete: CSRF validation and cookie/session hardening are now enforced for login/logout/admin user creation.
 Login UX hardening is complete: invalid browser logins now re-render `/login` with inline red error and preserved email (password not preserved).
 Post-login browser redirect default is now `/ui/map` (with safe `next` precedence for protected-page redirects).
+UI cross-navigation update is complete: status page has a Map link and map page has a Status link in the top navigation.
+Users page UI refresh is complete: "Admin Users" labels were renamed to "Users" and the page now supports the shared dark mode toggle behavior.
 GeoJSON export is available at `GET /api/v1/exports/geojson` with optional `from`, `to`, and `device_id`.
 GPX export is available at `GET /api/v1/exports/gpx` with optional `from`, `to`, and `device_id`.
 Operational status endpoint is `GET /api/v1/status` (lightweight JSON, no Prometheus).
