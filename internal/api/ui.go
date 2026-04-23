@@ -14,6 +14,7 @@ const statusPageHTML = `<!doctype html>
   <style>
     :root {
       --bg: #f4f6f8;
+      --bg-top: #eef3f8;
       --card: #ffffff;
       --text: #1b1f24;
       --muted: #5a6573;
@@ -22,22 +23,61 @@ const statusPageHTML = `<!doctype html>
       --warn: #b06000;
       --bad: #b42318;
       --border: #d7dde5;
+      --shadow: rgba(9, 30, 66, 0.06);
+      --toggle-bg: #ffffff;
+      --toggle-text: #1b1f24;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0f141a;
+      --bg-top: #18212c;
+      --card: #151c24;
+      --text: #e8edf3;
+      --muted: #a8b4c0;
+      --accent: #5ba3ff;
+      --ok: #48c774;
+      --warn: #e2a84b;
+      --bad: #ff7b72;
+      --border: #2a3440;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --toggle-bg: #1e2732;
+      --toggle-text: #e8edf3;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
       color: var(--text);
-      background: linear-gradient(180deg, #eef3f8 0%, var(--bg) 35%, var(--bg) 100%);
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
     }
     .wrap {
       max-width: 860px;
       margin: 20px auto;
       padding: 0 12px 18px;
     }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
     h1 {
-      margin: 0 0 10px;
+      margin: 0;
       font-size: 24px;
+    }
+    .theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--toggle-bg);
+      color: var(--toggle-text);
+      border-radius: 999px;
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .theme-toggle[aria-pressed="true"] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
     }
     .muted { color: var(--muted); }
     .grid {
@@ -51,7 +91,7 @@ const statusPageHTML = `<!doctype html>
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px;
-      box-shadow: 0 1px 2px rgba(9, 30, 66, 0.06);
+      box-shadow: 0 1px 2px var(--shadow);
     }
     .label {
       font-size: 12px;
@@ -88,7 +128,10 @@ const statusPageHTML = `<!doctype html>
 </head>
 <body>
   <div class="wrap">
-    <h1>Plexplore Status</h1>
+    <div class="topbar">
+      <h1>Plexplore Status</h1>
+      <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+    </div>
     <div id="updated" class="tiny">Loading...</div>
 
     <div class="grid">
@@ -149,6 +192,37 @@ const statusPageHTML = `<!doctype html>
   </div>
 
   <script>
+    const THEME_KEY = "plexplore.theme";
+
+    function preferredTheme() {
+      const stored = localStorage.getItem(THEME_KEY);
+      if (stored === "light" || stored === "dark") return stored;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+      const root = document.documentElement;
+      root.setAttribute("data-theme", theme);
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      const isDark = theme === "dark";
+      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+      btn.textContent = isDark ? "☀" : "🌙";
+      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+    }
+
+    function initThemeToggle() {
+      applyTheme(preferredTheme());
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        const next = current === "dark" ? "light" : "dark";
+        localStorage.setItem(THEME_KEY, next);
+        applyTheme(next);
+      });
+    }
+
     async function getJSON(path) {
       const res = await fetch(path, { cache: "no-store" });
       if (!res.ok) throw new Error(path + " status " + res.status);
@@ -264,6 +338,7 @@ const statusPageHTML = `<!doctype html>
       }
     }
 
+    initThemeToggle();
     refresh();
     setInterval(refresh, 5000);
   </script>
@@ -286,18 +361,34 @@ const mapPageHTML = `<!doctype html>
   <style>
     :root {
       --bg: #f4f6f8;
+      --bg-top: #eef3f8;
       --text: #1b1f24;
       --muted: #5a6573;
       --card: #ffffff;
       --border: #d7dde5;
       --accent: #0b6bcb;
+      --shadow: rgba(9, 30, 66, 0.06);
+      --toggle-bg: #ffffff;
+      --toggle-text: #1b1f24;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0f141a;
+      --bg-top: #18212c;
+      --text: #e8edf3;
+      --muted: #a8b4c0;
+      --card: #151c24;
+      --border: #2a3440;
+      --accent: #5ba3ff;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --toggle-bg: #1e2732;
+      --toggle-text: #e8edf3;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
       color: var(--text);
-      background: var(--bg);
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
     }
     .wrap {
       max-width: 1000px;
@@ -305,14 +396,35 @@ const mapPageHTML = `<!doctype html>
       padding: 0 12px 16px;
     }
     h1 {
-      margin: 0 0 10px;
+      margin: 0;
       font-size: 24px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--toggle-bg);
+      color: var(--toggle-text);
+      border-radius: 999px;
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .theme-toggle[aria-pressed="true"] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
     }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      box-shadow: 0 1px 2px rgba(9, 30, 66, 0.06);
+      box-shadow: 0 1px 2px var(--shadow);
       padding: 10px;
       margin-bottom: 10px;
     }
@@ -322,12 +434,13 @@ const mapPageHTML = `<!doctype html>
       gap: 8px;
       align-items: center;
     }
-    input, button {
+    input, select, button {
       font: inherit;
       padding: 6px 8px;
       border-radius: 6px;
       border: 1px solid var(--border);
-      background: #fff;
+      background: var(--card);
+      color: var(--text);
     }
     button {
       cursor: pointer;
@@ -346,7 +459,10 @@ const mapPageHTML = `<!doctype html>
 </head>
 <body>
   <div class="wrap">
-    <h1>Plexplore Map</h1>
+    <div class="topbar">
+      <h1>Plexplore Map</h1>
+      <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+    </div>
     <div class="card">
       <div class="row">
         <label>Device:
@@ -397,6 +513,37 @@ const mapPageHTML = `<!doctype html>
     crossorigin=""
   ></script>
   <script>
+    const THEME_KEY = "plexplore.theme";
+
+    function preferredTheme() {
+      const stored = localStorage.getItem(THEME_KEY);
+      if (stored === "light" || stored === "dark") return stored;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+      const root = document.documentElement;
+      root.setAttribute("data-theme", theme);
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      const isDark = theme === "dark";
+      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+      btn.textContent = isDark ? "☀" : "🌙";
+      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+    }
+
+    function initThemeToggle() {
+      applyTheme(preferredTheme());
+      const btn = document.getElementById("theme_toggle");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        const next = current === "dark" ? "light" : "dark";
+        localStorage.setItem(THEME_KEY, next);
+        applyTheme(next);
+      });
+    }
+
     const map = L.map("map");
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -605,6 +752,7 @@ const mapPageHTML = `<!doctype html>
       }
     }
 
+    initThemeToggle();
     document.getElementById("load_btn").addEventListener("click", loadPointsAndVisits);
     setDefaultDateRangeIfEmpty();
     loadDevices().then(loadPointsAndVisits);

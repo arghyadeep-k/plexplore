@@ -391,6 +391,7 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - spool/checkpoint status
 - last flush status
 - recent points preview
+- dark mode toggle (sun/moon) with localStorage persistence and system-preference fallback
 
 Map page notes:
 - uses Leaflet (CDN-loaded) with OpenStreetMap tiles
@@ -401,6 +402,7 @@ Map page notes:
 - includes a small visits summary table (start, end, duration, device) below the map
 - supports filtering by device and date range (`from`/`to` day inputs)
 - defaults to a recent 7-day range when no date filters are set
+- includes the same dark mode toggle with saved preference behavior
 
 ## Raspberry Pi Deployment (systemd)
 

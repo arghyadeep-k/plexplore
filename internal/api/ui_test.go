@@ -29,6 +29,12 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if !strings.Contains(body, "Recent Points") {
 		t.Fatalf("expected recent points section in body, got %q", body)
 	}
+	if !strings.Contains(body, `id="theme_toggle"`) {
+		t.Fatalf("expected theme toggle in status page, got %q", body)
+	}
+	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
+		t.Fatalf("expected dark mode persistence/system preference hooks in status page, got %q", body)
+	}
 }
 
 func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {
@@ -89,5 +95,11 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	}
 	if !strings.Contains(body, `id="visits_body"`) {
 		t.Fatalf("expected visits summary table body in map page, got %q", body)
+	}
+	if !strings.Contains(body, `id="theme_toggle"`) {
+		t.Fatalf("expected theme toggle in map page, got %q", body)
+	}
+	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
+		t.Fatalf("expected dark mode persistence/system preference hooks in map page, got %q", body)
 	}
 }

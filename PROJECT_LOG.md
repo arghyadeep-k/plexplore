@@ -2022,3 +2022,52 @@ Known issues:
 - Reverse geocode labels depend on external provider availability/terms when enabled.
 - `gofmt -w` was blocked in this session by read-only filesystem policy for direct write commands (code compiles/tests pass).
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 00:01 UTC - Phase 50 (Lightweight Dark Mode Toggle UI)
+Implemented:
+- Added lightweight dark mode support to both existing server-rendered UI pages:
+- status page (`GET /`, `GET /ui/status`)
+- map page (`GET /ui/map`)
+- Added top-of-page accessible theme toggle button (`id="theme_toggle"`) with sun/moon icon behavior.
+- Theme behavior:
+- toggles light/dark immediately without page reload
+- persists preference in `localStorage` (`plexplore.theme`)
+- applies saved preference on page load
+- falls back to system preference (`prefers-color-scheme: dark`) when no saved preference exists
+- Updated CSS tokens to support dark mode across existing UI components:
+- page background
+- text/muted text
+- cards and borders
+- tables/status sections/recent points/visits summary
+- form controls on map page (`input`, `select`, `button`)
+- Kept layout and architecture unchanged (plain HTML/CSS/vanilla JS; no build tooling/dependencies).
+- Updated UI tests to verify:
+- theme toggle is rendered on status page and map page
+- dark-mode script hooks are present (`localStorage`, `prefers-color-scheme`)
+- Updated README with short dark mode behavior notes for both status and map pages.
+
+Architectural decisions:
+- Decision: Keep theme logic embedded in existing server-rendered templates rather than introducing shared frontend tooling.
+  Reason: Preserves low-overhead Pi-friendly deployment model and avoids adding build/runtime dependencies.
+- Decision: Use CSS variables with `data-theme` switching on document root.
+  Reason: Minimal code change applies theme consistently across current UI sections.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|StatusPage_DoesNotMatchTypoPath)' -count=1`
+- `go test ./internal/api -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Consider adding `prefers-color-scheme` live-change listener for users who switch OS theme while page is open and no explicit preference is saved.
+- Keep UI route tests focused; avoid snapshot-heavy HTML tests.
+- Continue flusher checkpoint-failure requeue hardening.
+
+Known issues:
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

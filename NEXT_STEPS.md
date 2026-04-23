@@ -1,11 +1,11 @@
 # Next Steps
 
 ## Current milestone
-Stabilize optional reverse-geocode cache behavior for visit centroids
+Stabilize UI theme behavior and optional reverse-geocode cache follow-ups
 
 ## Next 3 tasks
 1. Add integration-style `GET /api/v1/visits` test with real SQLite cache entries (`place_label` returned for cached centroids)
-2. Add optional cache refresh/invalidation strategy (time-based or manual) while keeping default low-overhead behavior
+2. Add optional live system-theme change handling when no explicit local preference is saved
 3. Continue flusher durability hardening for checkpoint-failure requeue behavior without redesigning pipeline
 
 ## Commands
@@ -17,6 +17,7 @@ Stabilize optional reverse-geocode cache behavior for visit centroids
 - `go test ./internal/api -run 'TestPointsEndpoint_' -count=1`
 - `go test ./internal/api -run 'TestGenerateVisitsEndpoint_|TestListVisitsEndpoint' -count=1`
 - `go test ./internal/api -run 'Test(ListVisitsEndpoint|ListVisitsEndpoint_InvalidParams|GenerateVisitsEndpoint_)' -count=1`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|StatusPage_DoesNotMatchTypoPath)' -count=1`
 - `go test ./internal/store -run 'TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder' -count=1`
 - `go test ./internal/store -run 'TestVisitDetection_' -count=1`
 - `go test ./internal/store -run 'TestListVisits_FilterByTimeRange' -count=1`
@@ -78,6 +79,7 @@ Status endpoint now includes service health, buffer/spool/checkpoint state, spoo
 Shutdown behavior now includes ingest draining (`503` for new ingest during shutdown), keep-alive disable on signal, separate server/flush shutdown windows, and synced spool/checkpoint close/write paths.
 Minimal web UI is served directly by backend at `GET /` (also `GET /ui/status`).
 Lightweight map page is available at `GET /ui/map` and uses Leaflet + `/api/v1/points`.
+Status and map pages now include a lightweight dark-mode toggle with localStorage persistence and system-preference fallback.
 Map now also loads `/api/v1/visits` for centroid markers and shows a small visits summary table (start/end/duration/device).
 Map UI now supports date-range and device filtering with a default recent 7-day range.
 UI now tolerates `/api/v1/devices` failures and still shows health/status cards.
