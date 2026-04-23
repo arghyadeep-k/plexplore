@@ -2951,3 +2951,38 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-23 05:26 UTC - Phase 69 (Login UX: Inline Browser Error Rendering)
+Implemented:
+- Fixed browser login failure flow so invalid credentials no longer render raw JSON.
+- `POST /login` now distinguishes browser-form requests from JSON/API-style requests:
+- browser form failures re-render the login HTML with inline error state
+- JSON/API-style failures continue to return JSON errors
+- Added inline login error UI behavior:
+- clear red error message (`Invalid email or password`) rendered near form
+- semantic accessibility marker (`role="alert"`)
+- preserved entered email value on failure
+- password is not preserved
+- Kept successful login behavior unchanged (`303` redirect with session cookie).
+
+Architectural decisions:
+- Decision: Add lightweight request-mode detection (`Content-Type`/`Accept`) for login failures.
+  Reason: Preserve API-style JSON error behavior while improving browser UX without adding dependencies or separate routes.
+
+Files changed:
+- `internal/api/login.go`
+- `internal/api/login_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/login.go internal/api/login_test.go`
+- `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LoginInvalidCredentials_JSONStillReturnsJSON|LogoutClearsSession|LoginRejectsMissingCSRFToken)' -count=1`
+- `go test ./... -count=1`
+
+Pending:
+- Manual browser verification on deployment target to confirm inline login UX under real reverse-proxy/browser conditions.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

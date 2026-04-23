@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"html"
 	"io"
@@ -64,15 +65,22 @@ const loginPageHTML = `<!doctype html>
       color: #fff;
       cursor: pointer;
     }
+    .error {
+      margin: 8px 0 4px;
+      color: #b42318;
+      font-size: 14px;
+      font-weight: 600;
+    }
     .muted { color: var(--muted); font-size: 13px; }
   </style>
 </head>
 <body>
   <form class="card" method="post" action="/login">
     <h1>Sign In</h1>
+    __ERROR_BLOCK__
     <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
     <label>Email
-      <input type="email" name="email" required autocomplete="username">
+      <input type="email" name="email" value="__EMAIL_VALUE__" required autocomplete="username">
     </label>
     <label>Password
       <input type="password" name="password" required autocomplete="current-password">
@@ -91,46 +99,72 @@ func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore S
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	csrfToken := ensureCSRFCookie(w, r)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	page := strings.ReplaceAll(loginPageHTML, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
-	_, _ = io.WriteString(w, page)
+	writeLoginPage(w, r, http.StatusOK, "", "")
 }
 
 func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid login form")
-			return
-		}
+		jsonRequest := isJSONLoginRequest(r)
 		if !validateCSRF(r) {
-			writeJSONError(w, http.StatusForbidden, "csrf token invalid")
+			if jsonRequest {
+				writeJSONError(w, http.StatusForbidden, "csrf token invalid")
+				return
+			}
+			writeLoginPage(w, r, http.StatusForbidden, "", "Session expired. Please try again.")
 			return
 		}
-		email := strings.TrimSpace(r.FormValue("email"))
-		password := strings.TrimSpace(r.FormValue("password"))
+
+		email, password, err := parseLoginCredentials(r, jsonRequest)
+		if err != nil {
+			if jsonRequest {
+				writeJSONError(w, http.StatusBadRequest, "invalid login form")
+				return
+			}
+			writeLoginPage(w, r, http.StatusBadRequest, "", "Invalid login request.")
+			return
+		}
 		if email == "" || password == "" {
-			writeJSONError(w, http.StatusBadRequest, "email and password are required")
+			if jsonRequest {
+				writeJSONError(w, http.StatusBadRequest, "email and password are required")
+				return
+			}
+			writeLoginPage(w, r, http.StatusBadRequest, email, "Email and password are required.")
 			return
 		}
 
 		user, err := userStore.GetUserByEmail(r.Context(), email)
 		if err != nil {
 			if errors.Is(err, store.ErrUserNotFound) {
-				writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
+				if jsonRequest {
+					writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
+					return
+				}
+				writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password")
 				return
 			}
-			writeJSONError(w, http.StatusInternalServerError, "user lookup failed")
+			if jsonRequest {
+				writeJSONError(w, http.StatusInternalServerError, "user lookup failed")
+				return
+			}
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.")
 			return
 		}
 		if !VerifyPassword(user.PasswordHash, password) {
-			writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
+			if jsonRequest {
+				writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
+				return
+			}
+			writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password")
 			return
 		}
 
 		session, err := sessionStore.CreateSession(r.Context(), user.ID)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "session creation failed")
+			if jsonRequest {
+				writeJSONError(w, http.StatusInternalServerError, "session creation failed")
+				return
+			}
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.")
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -143,6 +177,44 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
+}
+
+func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, errorMessage string) {
+	csrfToken := ensureCSRFCookie(w, r)
+	errorBlock := ""
+	if strings.TrimSpace(errorMessage) != "" {
+		errorBlock = `<p class="error" role="alert">` + html.EscapeString(errorMessage) + `</p>`
+	}
+	page := strings.ReplaceAll(loginPageHTML, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
+	page = strings.ReplaceAll(page, "__EMAIL_VALUE__", html.EscapeString(strings.TrimSpace(email)))
+	page = strings.ReplaceAll(page, "__ERROR_BLOCK__", errorBlock)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, page)
+}
+
+func parseLoginCredentials(r *http.Request, jsonRequest bool) (string, string, error) {
+	if jsonRequest {
+		var payload struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			return "", "", err
+		}
+		return strings.TrimSpace(payload.Email), strings.TrimSpace(payload.Password), nil
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("password")), nil
+}
+
+func isJSONLoginRequest(r *http.Request) bool {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	accept := strings.ToLower(strings.TrimSpace(r.Header.Get("Accept")))
+	return strings.Contains(contentType, "application/json") || strings.Contains(accept, "application/json")
 }
 
 func logoutHandler(sessionStore SessionStore) http.HandlerFunc {

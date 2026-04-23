@@ -5,7 +5,7 @@ Multi-user authentication milestone complete (Tasks 1-18 complete)
 
 ## Next 3 tasks
 1. Run end-to-end manual checklist on target Raspberry Pi deployment
-2. Monitor logs for session/CSRF validation failures in real traffic
+2. Monitor logs for session/CSRF validation failures and login UX errors in real traffic
 3. Define the next feature milestone beyond auth hardening
 
 ## Commands
@@ -27,6 +27,7 @@ Multi-user authentication milestone complete (Tasks 1-18 complete)
 - `go test ./internal/api -run 'TestLoadCurrentUserFromSession_' -count=1`
 - `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession)' -count=1`
 - `go test ./internal/api -run 'Test(LoginPageServed|LoginSuccessSetsSessionCookie|LoginInvalidCredentials|LogoutClearsSession|LoginRejectsMissingCSRFToken|Users_)' -count=1`
+- `go test ./internal/api -run 'Test(LoginInvalidCredentials|LoginInvalidCredentials_JSONStillReturnsJSON)' -count=1`
 - `go test ./internal/api -run 'Test(LoadCurrentUserFromSession_|RequireUserSessionAuth_|RequireUserSessionAuthHTML_|UIRoutesRequireSession_|UIRoutesAllowSession_)' -count=1`
 - `go test ./internal/api -run 'TestUsers_' -count=1`
 - `go test ./internal/api -run 'TestDevicesAPI_(UserSeesOnlyOwnDevices_WhenSessionAuthEnabled|UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled|RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled|CreateUsesCurrentSessionUser_WhenSessionAuthEnabled)' -count=1`
@@ -110,6 +111,7 @@ Task 15 is complete: device API key ingest remains session-independent and now p
 Task 16 is complete: full multi-user authorization/isolation integration coverage now verifies login separation, per-user devices/points/exports, ingest ownership, and non-owner rotate denial.
 Task 17 is complete: admin-only user management UI page is now available at `/ui/admin/users`.
 Task 18 is complete: CSRF validation and cookie/session hardening are now enforced for login/logout/admin user creation.
+Login UX hardening is complete: invalid browser logins now re-render `/login` with inline red error and preserved email (password not preserved).
 GeoJSON export is available at `GET /api/v1/exports/geojson` with optional `from`, `to`, and `device_id`.
 GPX export is available at `GET /api/v1/exports/gpx` with optional `from`, `to`, and `device_id`.
 Operational status endpoint is `GET /api/v1/status` (lightweight JSON, no Prometheus).

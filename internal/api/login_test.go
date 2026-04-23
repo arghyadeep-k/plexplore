@@ -172,6 +172,61 @@ func TestLoginInvalidCredentials(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Sign In") {
+		t.Fatalf("expected login page to be rendered, got %q", body)
+	}
+	if !strings.Contains(body, "Invalid email or password") {
+		t.Fatalf("expected inline invalid credentials message, got %q", body)
+	}
+	if !strings.Contains(body, `class="error"`) || !strings.Contains(body, `role="alert"`) {
+		t.Fatalf("expected visible/accessible error styling state, got %q", body)
+	}
+	if !strings.Contains(body, `name="email" value="user@example.com"`) {
+		t.Fatalf("expected email field to retain entered value, got %q", body)
+	}
+	if strings.Contains(body, "wrong-pass") {
+		t.Fatalf("did not expect password value to be preserved, got %q", body)
+	}
+}
+
+func TestLoginInvalidCredentials_JSONStillReturnsJSON(t *testing.T) {
+	hash, err := HashPassword("correct-pass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	userStore := &fakeAuthUserStore{
+		byEmail: map[string]store.User{
+			"user@example.com": {
+				ID:           8,
+				Email:        "user@example.com",
+				PasswordHash: hash,
+			},
+		},
+	}
+	sessionStore := &fakeAuthSessionStore{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+	})
+
+	csrfToken, csrfCookie := fetchLoginCSRF(t, mux)
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"email":"user@example.com","password":"wrong-pass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	req.AddCookie(csrfCookie)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected JSON content type, got %q", rec.Header().Get("Content-Type"))
+	}
 	var payload map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("expected JSON error response, got %v", err)
