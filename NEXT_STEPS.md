@@ -1,12 +1,12 @@
 # Next Steps
 
 ## Current milestone
-Small security hardening complete: CSRF coverage on session write endpoints, map popup escaping, and minimum password length enforcement
+Production-hardening tranche complete for CSP inline removal, migration robustness, and privacy-first map tile configuration
 
 ## Next 3 tasks
-1. CSP hardening: move inline UI styles/scripts into static assets and remove `'unsafe-inline'` from CSP
-2. Migration robustness: improve partial-migration recovery/idempotency for mixed sqlite3 environments
-3. Map privacy controls: make tile provider privacy posture explicit (blank/local/custom) and document operator guidance
+1. Add authenticated browser smoke test coverage for `/login` -> `/ui/map` to validate page assets and map filtering workflow end-to-end
+2. Tighten CSP `img-src` dynamically by tile mode (for example strict `'self' data:` in `APP_MAP_TILE_MODE=none`)
+3. Add a regression migration fixture for `0005_users_auth_fields.sql` partial-state recovery (columns present, migration row missing)
 
 ## Commands
 - `go test ./...`
@@ -219,3 +219,6 @@ Continue strictly in order from Task 10 next.
 Continue strictly in order from Task 11 next.
 Continue strictly in order from Task 9 next.
 Continue strictly in order from Task 6 next.
+UI CSP now removes `'unsafe-inline'`; UI pages serve local assets from `/ui/assets/app/*`.
+Map tiles default to privacy mode via `APP_MAP_TILE_MODE=none`; external tiles require explicit `osm` or `custom` mode.
+Migrator now executes with `sqlite3 -bail` and transaction-wrapped apply+record logic; known additive partial migrations (`0002`, `0005`, `0007`) recover safely.

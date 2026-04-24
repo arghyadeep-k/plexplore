@@ -1,0 +1,19 @@
+.users-wrap {
+  max-width: 860px;
+}
+
+.wide-input {
+  min-width: 240px;
+}
+
+.mid-input {
+  min-width: 180px;
+}
+
+#create_status.status-success {
+  color: var(--ok);
+}
+
+#create_status.status-error {
+  color: var(--bad);
+}

@@ -121,6 +121,11 @@ func main() {
 			SecureMode:        cfg.CookieSecureMode,
 			TrustProxyHeaders: cfg.TrustProxyHeaders,
 		},
+		MapTiles: api.MapTileConfig{
+			Mode:        cfg.MapTileMode,
+			URLTemplate: cfg.MapTileURLTemplate,
+			Attribution: cfg.MapTileAttribution,
+		},
 		RateLimiters: rateLimiters,
 		SpoolDir:     cfg.SpoolDir,
 		SQLitePath:   cfg.SQLitePath,

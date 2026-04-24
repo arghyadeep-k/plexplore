@@ -73,6 +73,12 @@ type Config struct {
 	ReverseGeocodeTimeout              time.Duration
 	ReverseGeocodeCacheDecimals        int
 	ReverseGeocodeMaxLookupsPerRequest int
+
+	// Map tile provider settings.
+	// Mode values: none, osm, custom.
+	MapTileMode        string
+	MapTileURLTemplate string
+	MapTileAttribution string
 }
 
 func Load() Config {
@@ -114,6 +120,9 @@ func Load() Config {
 		ReverseGeocodeTimeout:              getEnvDuration("APP_REVERSE_GEOCODE_TIMEOUT", 2*time.Second),
 		ReverseGeocodeCacheDecimals:        getEnvInt("APP_REVERSE_GEOCODE_CACHE_DECIMALS", 4),
 		ReverseGeocodeMaxLookupsPerRequest: getEnvInt("APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST", 3),
+		MapTileMode:                        getMapTileMode("APP_MAP_TILE_MODE", "none"),
+		MapTileURLTemplate:                 getEnv("APP_MAP_TILE_URL_TEMPLATE", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+		MapTileAttribution:                 getEnv("APP_MAP_TILE_ATTRIBUTION", "&copy; OpenStreetMap contributors"),
 	}
 }
 
@@ -224,4 +233,17 @@ func defaultCookieSecureModeForDeployment(mode string) string {
 
 func defaultExpectTLSTerminationForDeployment(mode string) bool {
 	return strings.EqualFold(strings.TrimSpace(mode), "production")
+}
+
+func getMapTileMode(key, fallback string) string {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if mode == "" {
+		return fallback
+	}
+	switch mode {
+	case "none", "osm", "custom":
+		return mode
+	default:
+		return fallback
+	}
 }

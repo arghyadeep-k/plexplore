@@ -1,0 +1,25 @@
+.map-wrap {
+  max-width: 1000px;
+  margin-top: 16px;
+}
+
+#map {
+  height: 68vh;
+  min-height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.limit-input {
+  width: 90px;
+}
+
+.visits-table {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.visits-table th,
+.visits-table td {
+  padding: 6px;
+}

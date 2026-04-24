@@ -74,8 +74,14 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if !strings.Contains(body, `id="status_to_map_link"`) || !strings.Contains(body, `href="/ui/map"`) {
 		t.Fatalf("expected map navigation link on status page, got %q", body)
 	}
-	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
-		t.Fatalf("expected dark mode persistence/system preference hooks in status page, got %q", body)
+	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/status.js`) {
+		t.Fatalf("expected external status/common scripts in status page, got %q", body)
+	}
+	if strings.Contains(body, "<style>") || strings.Contains(body, "<script>") {
+		t.Fatalf("expected no inline style/script tags in status page, got %q", body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "unsafe-inline") {
+		t.Fatalf("expected CSP without unsafe-inline, got %q", got)
 	}
 }
 
@@ -144,14 +150,17 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if strings.Contains(strings.ToLower(body), "unpkg.com/leaflet") {
 		t.Fatalf("did not expect CDN leaflet URL in body, got %q", body)
 	}
-	if !strings.Contains(body, "/api/v1/visits") {
-		t.Fatalf("expected visits endpoint usage in map page, got %q", body)
+	if !strings.Contains(body, `data-tile-mode="none"`) {
+		t.Fatalf("expected default privacy-preserving tile mode none, got %q", body)
 	}
-	if !strings.Contains(body, `escapeHTML(p.timestamp_utc || "")`) || !strings.Contains(body, `escapeHTML(p.device_id || "")`) {
-		t.Fatalf("expected escaped map popup fields for timestamp/device, got %q", body)
+	if strings.Contains(strings.ToLower(body), "tile.openstreetmap.org") {
+		t.Fatalf("did not expect default map page to call external OSM tiles, got %q", body)
 	}
-	if !strings.Contains(body, "visitLayer") {
-		t.Fatalf("expected visit layer rendering in map page script, got %q", body)
+	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/map.js`) {
+		t.Fatalf("expected external map/common scripts in map page, got %q", body)
+	}
+	if strings.Contains(body, "<style>") || strings.Contains(body, "<script>") {
+		t.Fatalf("expected no inline style/script tags in map page, got %q", body)
 	}
 	if !strings.Contains(body, "Visits Summary") {
 		t.Fatalf("expected visits summary section in map page, got %q", body)
@@ -174,11 +183,48 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if !strings.Contains(body, `id="map_to_status_link"`) || !strings.Contains(body, `href="/ui/status"`) {
 		t.Fatalf("expected status navigation link on map page, got %q", body)
 	}
-	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
-		t.Fatalf("expected dark mode persistence/system preference hooks in map page, got %q", body)
-	}
 	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
 		t.Fatalf("expected CSP header on map page")
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "unsafe-inline") {
+		t.Fatalf("expected CSP without unsafe-inline, got %q", got)
+	}
+}
+
+func TestMapPage_UsesConfiguredExternalTileProvider(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "u@example.com"},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-1": {Token: "tok-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+		MapTiles: MapTileConfig{
+			Mode:        "custom",
+			URLTemplate: "http://tiles.local/{z}/{x}/{y}.png",
+			Attribution: "local tile server",
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/map", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-tile-mode="custom"`) {
+		t.Fatalf("expected custom tile mode in map page, got %q", body)
+	}
+	if !strings.Contains(body, `data-tile-url-template="http://tiles.local/{z}/{x}/{y}.png"`) {
+		t.Fatalf("expected custom tile template in map page, got %q", body)
 	}
 }
 
@@ -215,6 +261,26 @@ func TestUIAssets_LeafletIconServedLocally(t *testing.T) {
 	contentType := rec.Header().Get("Content-Type")
 	if !strings.Contains(contentType, "image/png") {
 		t.Fatalf("expected image/png content type for marker icon, got %q", contentType)
+	}
+}
+
+func TestUIAssets_MapScriptContainsEscapedPopupFields(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/assets/app/map.js", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for map js asset, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "escapeHTML(p.timestamp_utc || \"\")") || !strings.Contains(body, "escapeHTML(p.device_id || \"\")") {
+		t.Fatalf("expected escaped popup values in map js, got %q", body)
+	}
+	if !strings.Contains(body, "/api/v1/visits") || !strings.Contains(body, "/api/v1/points?") {
+		t.Fatalf("expected map js to query points and visits endpoints, got %q", body)
 	}
 }
 
@@ -299,17 +365,14 @@ func TestAdminUsersPageServedForAdminSession(t *testing.T) {
 	if !strings.Contains(body, "<title>Plexplore Users</title>") || !strings.Contains(body, "<h1>Users</h1>") {
 		t.Fatalf("expected users page title/heading in body, got %q", body)
 	}
-	if !strings.Contains(body, "/api/v1/users") {
-		t.Fatalf("expected admin users API usage in body, got %q", body)
-	}
-	if !strings.Contains(body, "X-CSRF-Token") {
-		t.Fatalf("expected csrf header usage in admin users page script, got %q", body)
+	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/users.js`) {
+		t.Fatalf("expected external users/common scripts in admin users page, got %q", body)
 	}
 	if !strings.Contains(body, `id="theme_toggle"`) {
 		t.Fatalf("expected theme toggle on users page, got %q", body)
 	}
-	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
-		t.Fatalf("expected dark mode hooks on users page, got %q", body)
+	if strings.Contains(body, "<style>") || strings.Contains(body, "<script>") {
+		t.Fatalf("expected no inline style/script tags on users page, got %q", body)
 	}
 	if !strings.Contains(body, "admin@example.com") {
 		t.Fatalf("expected current admin email in body, got %q", body)

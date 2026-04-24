@@ -58,6 +58,6 @@ func registerUIRoutesWithFallbacksForTest(mux *http.ServeMux, deps Dependencies)
 	}
 	mux.HandleFunc("GET /{$}", statusPageHandler(deps.CookieSecurity))
 	mux.HandleFunc("GET /ui/status", statusPageHandler(deps.CookieSecurity))
-	mux.HandleFunc("GET /ui/map", mapPageHandler(deps.CookieSecurity))
+	mux.HandleFunc("GET /ui/map", mapPageHandler(deps.CookieSecurity, deps.MapTiles))
 	mux.HandleFunc("GET /ui/admin/users", adminUsersPageHandler(deps.CookieSecurity))
 }

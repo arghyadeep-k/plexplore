@@ -3772,6 +3772,90 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 08:42 UTC - Phase 80 (CSP Tightening, Migration Robustness, Tile Privacy Config)
+Implemented:
+- Removed inline UI CSS/JS from login/status/map/users pages and moved behavior/styling to local static assets under `/ui/assets/app/*`.
+- Tightened HTML CSP by removing `'unsafe-inline'` from both `script-src` and `style-src`.
+- Kept lightweight UI behavior intact (dark mode toggle, status refresh, map filters/track/visits, users page create/list).
+- Added map tile provider configuration:
+- `APP_MAP_TILE_MODE=none|osm|custom`
+- `APP_MAP_TILE_URL_TEMPLATE`
+- `APP_MAP_TILE_ATTRIBUTION`
+- Default is now `none` (blank/privacy mode) so map works without external tile requests unless explicitly enabled.
+- Hardened migrator execution:
+- migration SQL + migration record now run in one SQLite transaction (`BEGIN IMMEDIATE ... INSERT schema_migrations ... COMMIT`)
+- `sqlite3 -bail` is now used so failures stop immediately and cannot incorrectly record migration success
+- added partial-migration recovery for known additive migrations (`0002`, `0005`, `0007`) by validating schema state and recording migration when already effectively applied
+- preserves failed non-recoverable migrations as unrecorded.
+- Updated Docker/systemd sample env defaults/docs with tile privacy knobs.
+- Added/updated tests for:
+- CSP without `unsafe-inline`
+- externalized UI assets on rendered pages
+- escaped map popup fields from local `map.js`
+- map tile mode default (`none`) and configured custom tile template
+- migrator partial-state recovery and failed-migration non-recording.
+
+Architectural decisions:
+- Decision: Serve all UI JS/CSS from self-hosted static assets and enforce strict `'self'` CSP for scripts/styles.
+  Reason: Remove inline script/style CSP exception while keeping frontend lightweight and dependency-free.
+- Decision: Default map tile mode to `none`, requiring explicit opt-in for external tiles.
+  Reason: Prefer privacy-preserving defaults for self-hosted deployments.
+- Decision: Use `sqlite3 -bail` plus transactional migration wrapper and targeted schema-aware recovery.
+  Reason: Prevent false-positive migration recording and recover safely from prior duplicate-column partial states.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/login.go`
+- `internal/api/security_headers.go`
+- `internal/api/ui_assets.go`
+- `internal/api/health.go`
+- `internal/api/routes_test_helpers_test.go`
+- `internal/api/ui_test.go`
+- `internal/api/login_test.go`
+- `internal/api/assets/app/app.css`
+- `internal/api/assets/app/status.css`
+- `internal/api/assets/app/map.css`
+- `internal/api/assets/app/users.css`
+- `internal/api/assets/app/login.css`
+- `internal/api/assets/app/common.js`
+- `internal/api/assets/app/status.js`
+- `internal/api/assets/app/map.js`
+- `internal/api/assets/app/users.js`
+- `internal/store/migrator.go`
+- `internal/store/migrator_test.go`
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `cmd/server/main.go`
+- `README.md`
+- `compose.yaml`
+- `deploy/systemd/plexplore.env.sample`
+- `Dockerfile`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w cmd/server/main.go internal/api/health.go internal/api/login.go internal/api/routes_test_helpers_test.go internal/api/security_headers.go internal/api/ui.go internal/api/ui_test.go internal/config/config.go internal/config/config_test.go internal/store/migrator.go internal/store/migrator_test.go`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+- `go run ./cmd/server`
+- `curl -I http://127.0.0.1:8080/login`
+- `curl -I http://127.0.0.1:8080/`
+- `curl -I http://127.0.0.1:8080/ui/map`
+- `curl -I http://127.0.0.1:8080/ui/assets/app/map.js`
+- `make migrate`
+- `make migrate`
+
+Pending:
+- Add one authenticated UI smoke test (login + `/ui/map`) that verifies tile-mode metadata and map script execution path together.
+- Consider narrowing `img-src` CSP dynamically when tile mode is `none` (currently allows `http(s)` to support optional external/custom tile modes).
+- Add a dedicated migration fixture test for real-world `0005_users_auth_fields.sql` partial state with missing index to keep recovery behavior guarded.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 03:20 UTC - Phase 79 (Security Fixes: CSRF Coverage, Map Popup Escaping, Password Policy)
 Implemented:
 - Added CSRF validation to session-authenticated write endpoints:

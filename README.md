@@ -536,7 +536,12 @@ Map page notes:
 - `/ui/assets/leaflet/leaflet.css`
 - `/ui/assets/leaflet/leaflet.js`
 - `/ui/assets/leaflet/images/*` (marker icons/shadow)
-- map tiles still come from OpenStreetMap (`https://{s}.tile.openstreetmap.org/...`)
+- tile provider is configurable:
+- `APP_MAP_TILE_MODE=none` (default): no external tile requests (privacy mode)
+- `APP_MAP_TILE_MODE=osm`: explicit opt-in to OpenStreetMap tiles
+- `APP_MAP_TILE_MODE=custom`: use `APP_MAP_TILE_URL_TEMPLATE` (for local/private tile server)
+- `APP_MAP_TILE_ATTRIBUTION` controls Leaflet attribution text for external/custom providers
+- privacy note: when external tiles are enabled, the tile provider can observe map viewport requests
 - fetches track points from `GET /api/v1/points`
 - renders an ordered track polyline
 - renders lightweight point markers for smaller result sets
@@ -566,9 +571,9 @@ Baseline browser security headers:
 - `Strict-Transport-Security` is intentionally not emitted by the app today (reverse proxy owns HSTS for production TLS deployments)
 
 CSP notes:
-- current UI pages use inline `<style>` and `<script>`, so CSP currently allows `'unsafe-inline'` for styles/scripts to avoid breaking existing lightweight pages
-- CSP still restricts sources to self for most resource classes, with explicit image allowance for OpenStreetMap tile hosts and `data:` marker/icon use
-- this is an intentional transitional compromise until inline code/styles are moved to external static files
+- UI pages now serve CSS/JS from local static assets (`/ui/assets/app/*`), so CSP no longer uses `'unsafe-inline'`
+- `script-src` and `style-src` are both restricted to `'self'`
+- `img-src` allows `'self'`, `data:`, and `http(s)` to support optional external/custom map tile providers
 
 Route access model:
 - public routes:
@@ -845,6 +850,9 @@ Environment variables commonly used in containers:
 - `APP_SPOOL_FSYNC_MODE`
 - `APP_SPOOL_FSYNC_INTERVAL`
 - `APP_SPOOL_FSYNC_BYTE_THRESHOLD`
+- `APP_MAP_TILE_MODE`
+- `APP_MAP_TILE_URL_TEMPLATE`
+- `APP_MAP_TILE_ATTRIBUTION`
 
 Raspberry Pi Zero 2 W caveats:
 - Prefer running on local Pi storage or a reliable SSD-backed USB volume; avoid unstable network mounts for `/data`.
@@ -888,6 +896,9 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_REVERSE_GEOCODE_TIMEOUT` (default: `2s`): provider HTTP timeout.
 - `APP_REVERSE_GEOCODE_CACHE_DECIMALS` (default: `4`): centroid coordinate rounding for cache keys (higher precision = more cache entries).
 - `APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST` (default: `3`): hard cap on provider calls during one `GET /api/v1/visits`.
+- `APP_MAP_TILE_MODE` (default: `none`): map tile mode (`none`, `osm`, `custom`).
+- `APP_MAP_TILE_URL_TEMPLATE` (default: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`): tile URL template used for `osm`/`custom` mode.
+- `APP_MAP_TILE_ATTRIBUTION` (default: `&copy; OpenStreetMap contributors`): tile attribution text for `osm`/`custom` mode.
 
 Flush trigger policy:
 - periodic flush loop remains active (`APP_FLUSH_INTERVAL`).
@@ -919,6 +930,11 @@ go run ./cmd/migrate
 
 The migration runner keeps a `schema_migrations` table and applies `.sql` files
 from `APP_MIGRATIONS_DIR` in filename order.
+
+Migration robustness notes:
+- each migration is applied inside a SQLite transaction together with migration-version recording when possible
+- if a known additive migration was partially applied earlier (for example duplicate-column state with missing `schema_migrations` row), rerun now recovers by validating schema state and recording the migration safely
+- failed non-recoverable migrations are not recorded
 
 Device key hash migration:
 - migration `0007_device_api_key_hash.sql` adds `devices.api_key_hash` and `devices.api_key_preview`

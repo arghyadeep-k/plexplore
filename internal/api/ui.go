@@ -13,156 +13,21 @@ const statusPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Plexplore Status</title>
-  <style>
-    :root {
-      --bg: #f4f6f8;
-      --bg-top: #eef3f8;
-      --card: #ffffff;
-      --text: #1b1f24;
-      --muted: #5a6573;
-      --accent: #0b6bcb;
-      --ok: #188038;
-      --warn: #b06000;
-      --bad: #b42318;
-      --border: #d7dde5;
-      --shadow: rgba(9, 30, 66, 0.06);
-      --toggle-bg: #ffffff;
-      --toggle-text: #1b1f24;
-    }
-    :root[data-theme="dark"] {
-      --bg: #0f141a;
-      --bg-top: #18212c;
-      --card: #151c24;
-      --text: #e8edf3;
-      --muted: #a8b4c0;
-      --accent: #5ba3ff;
-      --ok: #48c774;
-      --warn: #e2a84b;
-      --bad: #ff7b72;
-      --border: #2a3440;
-      --shadow: rgba(0, 0, 0, 0.35);
-      --toggle-bg: #1e2732;
-      --toggle-text: #e8edf3;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
-      color: var(--text);
-      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
-    }
-    .wrap {
-      max-width: 860px;
-      margin: 20px auto;
-      padding: 0 12px 18px;
-    }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .session-user {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .nav-link {
-      font-size: 12px;
-      color: var(--accent);
-      text-decoration: none;
-      border: 1px solid var(--border);
-      background: var(--card);
-      border-radius: 8px;
-      padding: 6px 10px;
-    }
-    .logout-btn {
-      border: 1px solid var(--border);
-      background: var(--card);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-    .theme-toggle {
-      border: 1px solid var(--border);
-      background: var(--toggle-bg);
-      color: var(--toggle-text);
-      border-radius: 999px;
-      width: 36px;
-      height: 36px;
-      font-size: 18px;
-      line-height: 1;
-      cursor: pointer;
-    }
-    .theme-toggle[aria-pressed="true"] {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
-    }
-    .muted { color: var(--muted); }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 12px;
-      margin-top: 10px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      box-shadow: 0 1px 2px var(--shadow);
-    }
-    .label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
-    .value {
-      font-size: 22px;
-      font-weight: 600;
-    }
-    .ok { color: var(--ok); }
-    .warn { color: var(--warn); }
-    .bad { color: var(--bad); }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 8px;
-    }
-    th, td {
-      text-align: left;
-      padding: 7px 6px;
-      border-bottom: 1px solid var(--border);
-      font-size: 14px;
-    }
-    th { color: var(--muted); font-weight: 600; }
-    .tiny { font-size: 12px; color: var(--muted); }
-    @media (max-width: 560px) {
-      .value { font-size: 19px; }
-      th, td { font-size: 13px; }
-    }
-  </style>
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <link rel="stylesheet" href="/ui/assets/app/app.css">
+  <link rel="stylesheet" href="/ui/assets/app/status.css">
+  <script defer src="/ui/assets/app/common.js"></script>
+  <script defer src="/ui/assets/app/status.js"></script>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap status-wrap">
     <div class="topbar">
       <h1>Plexplore Status</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="status_to_map_link" class="nav-link" href="/ui/map">Map</a>
         __ADMIN_LINK__
-        <form method="post" action="/logout" style="margin:0;">
+        <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
         </form>
@@ -203,7 +68,7 @@ const statusPageHTML = `<!doctype html>
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px;">
+    <div class="card mt-12">
       <div class="label">Devices</div>
       <table>
         <thead>
@@ -215,7 +80,7 @@ const statusPageHTML = `<!doctype html>
       </table>
     </div>
 
-    <div class="card" style="margin-top:12px;">
+    <div class="card mt-12">
       <div class="label">Recent Points</div>
       <table>
         <thead>
@@ -228,157 +93,6 @@ const statusPageHTML = `<!doctype html>
     </div>
   </div>
 
-  <script>
-    const THEME_KEY = "plexplore.theme";
-
-    function preferredTheme() {
-      const stored = localStorage.getItem(THEME_KEY);
-      if (stored === "light" || stored === "dark") return stored;
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-
-    function applyTheme(theme) {
-      const root = document.documentElement;
-      root.setAttribute("data-theme", theme);
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      const isDark = theme === "dark";
-      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
-      btn.textContent = isDark ? "☀" : "🌙";
-      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
-    }
-
-    function initThemeToggle() {
-      applyTheme(preferredTheme());
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-        const next = current === "dark" ? "light" : "dark";
-        localStorage.setItem(THEME_KEY, next);
-        applyTheme(next);
-      });
-    }
-
-    async function getJSON(path) {
-      const res = await fetch(path, { cache: "no-store" });
-      if (!res.ok) throw new Error(path + " status " + res.status);
-      return res.json();
-    }
-
-    function setText(id, value, cls) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = value;
-      el.classList.remove("ok", "warn", "bad");
-      if (cls) el.classList.add(cls);
-    }
-
-    function renderDevices(devices) {
-      const body = document.getElementById("devices_body");
-      if (!body) return;
-      if (!devices || devices.length === 0) {
-        body.innerHTML = "<tr><td colspan='4' class='muted'>No devices</td></tr>";
-        return;
-      }
-      body.innerHTML = devices.map((d) =>
-        "<tr><td>" + d.id + "</td><td>" + escapeHTML(d.name) + "</td><td>" +
-        escapeHTML(d.source_type) + "</td><td>" + d.user_id + "</td></tr>"
-      ).join("");
-    }
-
-    function renderDevicesUnavailable(message) {
-      const body = document.getElementById("devices_body");
-      if (!body) return;
-      body.innerHTML = "<tr><td colspan='4' class='muted'>Unavailable: " + escapeHTML(message) + "</td></tr>";
-    }
-
-    function renderPoints(points) {
-      const body = document.getElementById("points_body");
-      if (!body) return;
-      if (!points || points.length === 0) {
-        body.innerHTML = "<tr><td colspan='5' class='muted'>No points</td></tr>";
-        return;
-      }
-      body.innerHTML = points.map((p) =>
-        "<tr><td>" + p.seq + "</td><td>" + escapeHTML(p.device_id || "") + "</td><td>" +
-        escapeHTML(p.timestamp_utc || "") + "</td><td>" + formatCoord(p.lat) + "</td><td>" +
-        formatCoord(p.lon) + "</td></tr>"
-      ).join("");
-    }
-
-    function renderPointsUnavailable(message) {
-      const body = document.getElementById("points_body");
-      if (!body) return;
-      body.innerHTML = "<tr><td colspan='5' class='muted'>Unavailable: " + escapeHTML(message) + "</td></tr>";
-    }
-
-    function formatCoord(value) {
-      if (typeof value !== "number" || !isFinite(value)) return "";
-      return value.toFixed(5);
-    }
-
-    function escapeHTML(value) {
-      return String(value).replace(/[&<>'"]/g, (ch) => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"
-      }[ch]));
-    }
-
-    async function refresh() {
-      const updated = document.getElementById("updated");
-      try {
-        const [health, status] = await Promise.all([
-          getJSON("/health"),
-          getJSON("/api/v1/status"),
-        ]);
-
-        setText("health", health.status === "ok" ? "OK" : "DEGRADED", health.status === "ok" ? "ok" : "warn");
-        setText("buffer_points", String(status.buffer_points || 0));
-        setText("buffer_bytes", String(status.buffer_bytes || 0));
-        setText("buffer_age", String(status.oldest_buffered_age_seconds || 0) + "s");
-        setText("spool_segments", String(status.spool_segment_count || 0));
-        setText("checkpoint_seq", String(status.checkpoint_seq || 0));
-
-        if (status.last_flush) {
-          setText("flush_status", status.last_flush.success ? "Success" : "Failed", status.last_flush.success ? "ok" : "bad");
-          const meta = [];
-          if (status.last_flush.at_utc) meta.push(status.last_flush.at_utc);
-          if (status.last_flush.error) meta.push(status.last_flush.error);
-          setText("flush_meta", meta.join(" | "));
-        } else {
-          setText("flush_status", "Not yet", "warn");
-          setText("flush_meta", "");
-        }
-
-        let deviceWarning = "";
-        try {
-          const devicesResp = await getJSON("/api/v1/devices");
-          renderDevices((devicesResp && devicesResp.devices) || []);
-        } catch (devicesErr) {
-          deviceWarning = " | devices: " + devicesErr.message;
-          renderDevicesUnavailable(devicesErr.message);
-        }
-
-        let pointsWarning = "";
-        try {
-          const pointsResp = await getJSON("/api/v1/points/recent?limit=10");
-          renderPoints((pointsResp && pointsResp.points) || []);
-        } catch (pointsErr) {
-          pointsWarning = " | points: " + pointsErr.message;
-          renderPointsUnavailable(pointsErr.message);
-        }
-
-        updated.textContent = "Updated: " + new Date().toLocaleString() + deviceWarning + pointsWarning;
-      } catch (err) {
-        setText("health", "ERROR", "bad");
-        if (updated) updated.textContent = "Update failed: " + err.message;
-      }
-    }
-
-    initThemeToggle();
-    refresh();
-    setInterval(refresh, 5000);
-  </script>
 </body>
 </html>
 `
@@ -389,141 +103,23 @@ const mapPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Plexplore Map</title>
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
   <link rel="stylesheet" href="/ui/assets/leaflet/leaflet.css" />
-  <style>
-    :root {
-      --bg: #f4f6f8;
-      --bg-top: #eef3f8;
-      --text: #1b1f24;
-      --muted: #5a6573;
-      --card: #ffffff;
-      --border: #d7dde5;
-      --accent: #0b6bcb;
-      --shadow: rgba(9, 30, 66, 0.06);
-      --toggle-bg: #ffffff;
-      --toggle-text: #1b1f24;
-    }
-    :root[data-theme="dark"] {
-      --bg: #0f141a;
-      --bg-top: #18212c;
-      --text: #e8edf3;
-      --muted: #a8b4c0;
-      --card: #151c24;
-      --border: #2a3440;
-      --accent: #5ba3ff;
-      --shadow: rgba(0, 0, 0, 0.35);
-      --toggle-bg: #1e2732;
-      --toggle-text: #e8edf3;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
-      color: var(--text);
-      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
-    }
-    .wrap {
-      max-width: 1000px;
-      margin: 16px auto;
-      padding: 0 12px 16px;
-    }
-    h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .session-user {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .nav-link {
-      font-size: 12px;
-      color: var(--accent);
-      text-decoration: none;
-      border: 1px solid var(--border);
-      background: var(--card);
-      border-radius: 8px;
-      padding: 6px 10px;
-    }
-    .logout-btn {
-      border: 1px solid var(--border);
-      background: var(--card);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    .theme-toggle {
-      border: 1px solid var(--border);
-      background: var(--toggle-bg);
-      color: var(--toggle-text);
-      border-radius: 999px;
-      width: 36px;
-      height: 36px;
-      font-size: 18px;
-      line-height: 1;
-      cursor: pointer;
-    }
-    .theme-toggle[aria-pressed="true"] {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      box-shadow: 0 1px 2px var(--shadow);
-      padding: 10px;
-      margin-bottom: 10px;
-    }
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
-    input, select, button {
-      font: inherit;
-      padding: 6px 8px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--card);
-      color: var(--text);
-    }
-    button {
-      cursor: pointer;
-      color: #fff;
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-    #map {
-      height: 68vh;
-      min-height: 340px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-    .muted { color: var(--muted); }
-  </style>
+  <link rel="stylesheet" href="/ui/assets/app/app.css">
+  <link rel="stylesheet" href="/ui/assets/app/map.css">
+  <script defer src="/ui/assets/leaflet/leaflet.js"></script>
+  <script defer src="/ui/assets/app/common.js"></script>
+  <script defer src="/ui/assets/app/map.js"></script>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap map-wrap">
     <div class="topbar">
       <h1>Plexplore Map</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="map_to_status_link" class="nav-link" href="/ui/status">Status</a>
         __ADMIN_LINK__
-        <form method="post" action="/logout" style="margin:0;">
+        <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
         </form>
@@ -544,286 +140,39 @@ const mapPageHTML = `<!doctype html>
           <input id="date_to" type="date">
         </label>
         <label>Limit:
-          <input id="limit" value="1500" style="width:90px;">
+          <input id="limit" value="1500" class="limit-input">
         </label>
         <button id="load_btn" type="button">Refresh</button>
       </div>
-      <div id="meta" class="muted" style="margin-top:8px;">Loading...</div>
+      <div id="meta" class="muted mt-8">Loading...</div>
     </div>
     <div class="card">
-      <div id="map"></div>
+      <div
+        id="map"
+        data-tile-mode="__MAP_TILE_MODE__"
+        data-tile-url-template="__MAP_TILE_URL_TEMPLATE__"
+        data-tile-attribution="__MAP_TILE_ATTRIBUTION__"></div>
     </div>
     <div class="card">
-      <div class="row" style="justify-content:space-between;">
+      <div class="row row-space-between">
         <strong>Visits Summary</strong>
         <span id="visits_summary_meta" class="muted">Loading...</span>
       </div>
-      <table style="margin-top:8px; width:100%; border-collapse:collapse;">
+      <table class="visits-table">
         <thead>
           <tr>
-            <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px;">Start (UTC)</th>
-            <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px;">End (UTC)</th>
-            <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px;">Duration</th>
-            <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px;">Device</th>
+            <th>Start (UTC)</th>
+            <th>End (UTC)</th>
+            <th>Duration</th>
+            <th>Device</th>
           </tr>
         </thead>
         <tbody id="visits_body">
-          <tr><td colspan="4" class="muted" style="padding:6px;">Loading...</td></tr>
+          <tr><td colspan="4" class="muted">Loading...</td></tr>
         </tbody>
       </table>
     </div>
   </div>
-
-  <script src="/ui/assets/leaflet/leaflet.js"></script>
-  <script>
-    const THEME_KEY = "plexplore.theme";
-
-    function preferredTheme() {
-      const stored = localStorage.getItem(THEME_KEY);
-      if (stored === "light" || stored === "dark") return stored;
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-
-    function applyTheme(theme) {
-      const root = document.documentElement;
-      root.setAttribute("data-theme", theme);
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      const isDark = theme === "dark";
-      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
-      btn.textContent = isDark ? "☀" : "🌙";
-      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
-    }
-
-    function initThemeToggle() {
-      applyTheme(preferredTheme());
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-        const next = current === "dark" ? "light" : "dark";
-        localStorage.setItem(THEME_KEY, next);
-        applyTheme(next);
-      });
-    }
-
-    const map = L.map("map");
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-
-    const trackLayer = L.layerGroup().addTo(map);
-    const visitLayer = L.layerGroup().addTo(map);
-    map.setView([41.88, -87.63], 10);
-
-    function formatDateUTC(date) {
-      return date.toISOString().slice(0, 10);
-    }
-
-    function setDefaultDateRangeIfEmpty() {
-      const fromInput = document.getElementById("date_from");
-      const toInput = document.getElementById("date_to");
-      if (!fromInput || !toInput) return;
-      if (fromInput.value && toInput.value) return;
-
-      const now = new Date();
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const recentFromUTC = new Date(todayUTC.getTime() - (6 * 24 * 60 * 60 * 1000));
-
-      fromInput.value = formatDateUTC(recentFromUTC);
-      toInput.value = formatDateUTC(todayUTC);
-    }
-
-    function dayStartRFC3339(dateValue) {
-      return dateValue + "T00:00:00Z";
-    }
-
-    function dayEndRFC3339(dateValue) {
-      return dateValue + "T23:59:59.999Z";
-    }
-
-    function buildPointsQuery() {
-      const params = new URLSearchParams();
-      const device = document.getElementById("device_select").value.trim();
-      const fromDate = document.getElementById("date_from").value.trim();
-      const toDate = document.getElementById("date_to").value.trim();
-      const limit = document.getElementById("limit").value.trim();
-      if (device) params.set("device_id", device);
-      if (fromDate) params.set("from", dayStartRFC3339(fromDate));
-      if (toDate) params.set("to", dayEndRFC3339(toDate));
-      if (limit) params.set("limit", limit);
-      return "/api/v1/points?" + params.toString();
-    }
-
-    function buildVisitsQuery() {
-      const params = new URLSearchParams();
-      const device = document.getElementById("device_select").value.trim();
-      const fromDate = document.getElementById("date_from").value.trim();
-      const toDate = document.getElementById("date_to").value.trim();
-      if (device) params.set("device_id", device);
-      if (fromDate) params.set("from", dayStartRFC3339(fromDate));
-      if (toDate) params.set("to", dayEndRFC3339(toDate));
-      params.set("limit", "500");
-      return "/api/v1/visits?" + params.toString();
-    }
-
-    function escapeHTML(value) {
-      return String(value).replace(/[&<>'"]/g, (ch) => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"
-      }[ch]));
-    }
-
-    function formatDuration(startRaw, endRaw) {
-      const start = new Date(startRaw);
-      const end = new Date(endRaw);
-      if (!(start instanceof Date) || !(end instanceof Date) || isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return "";
-      }
-      const seconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      if (hours > 0) {
-        return hours + "h " + minutes + "m";
-      }
-      return minutes + "m";
-    }
-
-    function renderVisitsSummary(visits) {
-      const body = document.getElementById("visits_body");
-      const meta = document.getElementById("visits_summary_meta");
-      if (!body || !meta) return;
-
-      if (!Array.isArray(visits) || visits.length === 0) {
-        body.innerHTML = "<tr><td colspan='4' class='muted' style='padding:6px;'>No visits for current filter</td></tr>";
-        meta.textContent = "0 visits";
-        return;
-      }
-
-      body.innerHTML = visits.map((v) =>
-        "<tr>" +
-          "<td style='border-bottom:1px solid var(--border); padding:6px;'>" + escapeHTML(v.start_at || "") + "</td>" +
-          "<td style='border-bottom:1px solid var(--border); padding:6px;'>" + escapeHTML(v.end_at || "") + "</td>" +
-          "<td style='border-bottom:1px solid var(--border); padding:6px;'>" + escapeHTML(formatDuration(v.start_at, v.end_at)) + "</td>" +
-          "<td style='border-bottom:1px solid var(--border); padding:6px;'>" + escapeHTML(v.device_id || "") + "</td>" +
-        "</tr>"
-      ).join("");
-      meta.textContent = visits.length + " visit(s)";
-    }
-
-    async function loadDevices() {
-      const select = document.getElementById("device_select");
-      if (!select) return;
-      try {
-        const res = await fetch("/api/v1/devices", { cache: "no-store" });
-        if (!res.ok) return;
-        const payload = await res.json();
-        const devices = (payload && payload.devices) || [];
-        if (!Array.isArray(devices) || devices.length === 0) return;
-
-        const options = ["<option value=''>All devices</option>"];
-        for (const d of devices) {
-          if (!d || !d.name) continue;
-          options.push("<option value='" + escapeHTML(d.name) + "'>" + escapeHTML(d.name) + "</option>");
-        }
-        select.innerHTML = options.join("");
-      } catch (_) {
-        // Device list is optional for map rendering.
-      }
-    }
-
-    async function loadVisits() {
-      const path = buildVisitsQuery();
-      visitLayer.clearLayers();
-      const res = await fetch(path, { cache: "no-store" });
-      if (!res.ok) throw new Error("visits HTTP " + res.status);
-      const payload = await res.json();
-      const visits = (payload && payload.visits) || [];
-
-      for (const v of visits) {
-        const marker = L.circleMarker([v.centroid_lat, v.centroid_lon], {
-          radius: 6,
-          color: "#9c27b0",
-          fillColor: "#9c27b0",
-          fillOpacity: 0.5,
-          weight: 1,
-        });
-        marker.bindPopup(
-          "visit #" + v.id +
-          "<br>device: " + escapeHTML(v.device_id || "") +
-          "<br>place: " + escapeHTML(v.place_label || "") +
-          "<br>start: " + escapeHTML(v.start_at || "") +
-          "<br>end: " + escapeHTML(v.end_at || "") +
-          "<br>points: " + String(v.point_count || 0)
-        );
-        marker.addTo(visitLayer);
-      }
-      renderVisitsSummary(visits);
-      return visits;
-    }
-
-    async function loadPointsAndVisits() {
-      const meta = document.getElementById("meta");
-      const pointsPath = buildPointsQuery();
-      meta.textContent = "Loading " + pointsPath;
-
-      trackLayer.clearLayers();
-      visitLayer.clearLayers();
-      try {
-        const res = await fetch(pointsPath, { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const payload = await res.json();
-        const points = (payload && payload.points) || [];
-        let visitsCount = 0;
-        let visitsWarning = "";
-        try {
-          const visits = await loadVisits();
-          visitsCount = visits.length;
-        } catch (visitsErr) {
-          visitsWarning = " | visits unavailable: " + visitsErr.message;
-          renderVisitsSummary([]);
-        }
-
-        if (!points.length) {
-          if (visitsCount > 0) {
-            meta.textContent = "No points for current filter | " + visitsCount + " visits shown" + visitsWarning;
-          } else {
-            meta.textContent = "No points for current filter | no visits for filter" + visitsWarning;
-          }
-          return;
-        }
-
-        const latlngs = points.map((p) => [p.lat, p.lon]);
-        const poly = L.polyline(latlngs, { color: "#0b6bcb", weight: 3 }).addTo(trackLayer);
-        map.fitBounds(poly.getBounds(), { padding: [16, 16] });
-
-        if (points.length <= 500) {
-          for (const p of points) {
-            L.circleMarker([p.lat, p.lon], { radius: 3, weight: 1 })
-              .bindPopup(
-                "seq=" + String(p.seq) + "<br>" +
-                escapeHTML(p.timestamp_utc || "") + "<br>" +
-                escapeHTML(p.device_id || "")
-              )
-              .addTo(trackLayer);
-          }
-        }
-
-        if (visitsCount > 0) {
-          meta.textContent = "Loaded " + points.length + " points | " + visitsCount + " visits shown" + visitsWarning;
-        } else {
-          meta.textContent = "Loaded " + points.length + " points | no visits for filter" + visitsWarning;
-        }
-      } catch (err) {
-        meta.textContent = "Load failed: " + err.message;
-      }
-    }
-
-    initThemeToggle();
-    document.getElementById("load_btn").addEventListener("click", loadPointsAndVisits);
-    setDefaultDateRangeIfEmpty();
-    loadDevices().then(loadPointsAndVisits);
-  </script>
 </body>
 </html>
 `
@@ -834,133 +183,21 @@ const adminUsersPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Plexplore Users</title>
-  <style>
-    :root {
-      --bg: #f4f6f8;
-      --bg-top: #eef3f8;
-      --card: #ffffff;
-      --text: #1b1f24;
-      --muted: #5a6573;
-      --accent: #0b6bcb;
-      --ok: #188038;
-      --bad: #b42318;
-      --border: #d7dde5;
-      --shadow: rgba(9, 30, 66, 0.06);
-      --toggle-bg: #ffffff;
-      --toggle-text: #1b1f24;
-    }
-    :root[data-theme="dark"] {
-      --bg: #0f141a;
-      --bg-top: #18212c;
-      --card: #151c24;
-      --text: #e8edf3;
-      --muted: #a8b4c0;
-      --accent: #5ba3ff;
-      --ok: #48c774;
-      --bad: #ff7b72;
-      --border: #2a3440;
-      --shadow: rgba(0, 0, 0, 0.35);
-      --toggle-bg: #1e2732;
-      --toggle-text: #e8edf3;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
-      color: var(--text);
-      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 35%, var(--bg) 100%);
-    }
-    .wrap {
-      max-width: 860px;
-      margin: 20px auto;
-      padding: 0 12px 18px;
-    }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .session-user {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .nav-link, .logout-btn {
-      font-size: 12px;
-      color: var(--accent);
-      text-decoration: none;
-      border: 1px solid var(--border);
-      background: var(--card);
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    .theme-toggle {
-      border: 1px solid var(--border);
-      background: var(--toggle-bg);
-      color: var(--toggle-text);
-      border-radius: 999px;
-      width: 36px;
-      height: 36px;
-      font-size: 18px;
-      line-height: 1;
-      cursor: pointer;
-    }
-    .theme-toggle[aria-pressed="true"] {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      box-shadow: 0 1px 2px var(--shadow);
-      margin-bottom: 12px;
-    }
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
-    input, button {
-      font: inherit;
-      padding: 7px 8px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--card);
-      color: var(--text);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th, td {
-      text-align: left;
-      padding: 7px 6px;
-      border-bottom: 1px solid var(--border);
-      font-size: 14px;
-    }
-    .muted { color: var(--muted); }
-    #create_status.status-success { color: var(--ok); }
-    #create_status.status-error { color: var(--bad); }
-  </style>
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <link rel="stylesheet" href="/ui/assets/app/app.css">
+  <link rel="stylesheet" href="/ui/assets/app/users.css">
+  <script defer src="/ui/assets/app/common.js"></script>
+  <script defer src="/ui/assets/app/users.js"></script>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap users-wrap">
     <div class="topbar">
       <h1>Users</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a class="nav-link" href="/ui/status">Status</a>
         <a class="nav-link" href="/ui/map">Map</a>
-        <form method="post" action="/logout" style="margin:0;">
+        <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
         </form>
@@ -970,12 +207,12 @@ const adminUsersPageHTML = `<!doctype html>
 
     <div class="card">
       <div class="row">
-        <input id="email" type="email" placeholder="user@example.com" style="min-width:240px;">
-        <input id="password" type="password" placeholder="password" style="min-width:180px;">
+        <input id="email" type="email" class="wide-input" placeholder="user@example.com">
+        <input id="password" type="password" class="mid-input" placeholder="password">
         <label><input id="is_admin" type="checkbox"> admin</label>
         <button id="create_btn" type="button">Create User</button>
       </div>
-      <div id="create_status" class="muted" style="margin-top:8px;"></div>
+      <div id="create_status" class="muted mt-8"></div>
     </div>
 
     <div class="card">
@@ -990,109 +227,6 @@ const adminUsersPageHTML = `<!doctype html>
     </div>
   </div>
 
-  <script>
-    const THEME_KEY = "plexplore.theme";
-    const CSRF_TOKEN = "__CSRF_TOKEN__";
-
-    function preferredTheme() {
-      const stored = localStorage.getItem(THEME_KEY);
-      if (stored === "light" || stored === "dark") return stored;
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-
-    function applyTheme(theme) {
-      const root = document.documentElement;
-      root.setAttribute("data-theme", theme);
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      const isDark = theme === "dark";
-      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
-      btn.textContent = isDark ? "☀" : "🌙";
-      btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
-    }
-
-    function initThemeToggle() {
-      applyTheme(preferredTheme());
-      const btn = document.getElementById("theme_toggle");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-        const next = current === "dark" ? "light" : "dark";
-        localStorage.setItem(THEME_KEY, next);
-        applyTheme(next);
-      });
-    }
-
-    function escapeHTML(value) {
-      return String(value).replace(/[&<>'"]/g, (ch) => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"
-      }[ch]));
-    }
-
-    async function loadUsers() {
-      const body = document.getElementById("users_body");
-      const res = await fetch("/api/v1/users", { cache: "no-store" });
-      if (!res.ok) throw new Error("users HTTP " + res.status);
-      const payload = await res.json();
-      const users = (payload && payload.users) || [];
-      if (!users.length) {
-        body.innerHTML = "<tr><td colspan='4' class='muted'>No users</td></tr>";
-        return;
-      }
-      body.innerHTML = users.map((u) =>
-        "<tr><td>" + u.id + "</td><td>" + escapeHTML(u.email || "") + "</td><td>" +
-        (u.is_admin ? "yes" : "no") + "</td><td>" + escapeHTML(u.created_at || "") + "</td></tr>"
-      ).join("");
-    }
-
-    async function createUser() {
-      const status = document.getElementById("create_status");
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value.trim();
-      const isAdmin = document.getElementById("is_admin").checked;
-      if (!email || !password) {
-        status.className = "status-error";
-        status.textContent = "Email and password are required.";
-        return;
-      }
-      status.className = "muted";
-      status.textContent = "Creating...";
-      const res = await fetch("/api/v1/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": CSRF_TOKEN,
-        },
-        body: JSON.stringify({ email, password, is_admin: isAdmin }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        status.className = "status-error";
-        status.textContent = "Create failed: " + text;
-        return;
-      }
-      status.className = "status-success";
-      status.textContent = "User created.";
-      document.getElementById("email").value = "";
-      document.getElementById("password").value = "";
-      document.getElementById("is_admin").checked = false;
-      await loadUsers();
-    }
-
-    document.getElementById("create_btn").addEventListener("click", () => {
-      createUser().catch((err) => {
-        const status = document.getElementById("create_status");
-        status.className = "status-error";
-        status.textContent = "Create failed: " + err.message;
-      });
-    });
-
-    initThemeToggle();
-    loadUsers().catch((err) => {
-      const body = document.getElementById("users_body");
-      body.innerHTML = "<tr><td colspan='4' class='muted'>Load failed: " + escapeHTML(err.message) + "</td></tr>";
-    });
-  </script>
 </body>
 </html>
 `
@@ -1111,7 +245,7 @@ func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
 	}
 	mux.Handle("GET /{$}", protectedHTML(statusPageHandler(deps.CookieSecurity)))
 	mux.Handle("GET /ui/status", protectedHTML(statusPageHandler(deps.CookieSecurity)))
-	mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity)))
+	mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity, deps.MapTiles)))
 	mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler(deps.CookieSecurity))))
 }
 
@@ -1124,12 +258,12 @@ func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	}
 }
 
-func mapPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+func mapPageHandler(cookiePolicy CookieSecurityPolicy, mapTiles MapTileConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
 		setHTMLSecurityHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, renderUIPage(mapPageHTML, r, csrfToken))
+		_, _ = io.WriteString(w, renderMapPage(mapPageHTML, r, csrfToken, mapTiles))
 	}
 }
 
@@ -1156,6 +290,26 @@ func renderUIPage(page string, r *http.Request, csrfToken string) string {
 	rendered := strings.ReplaceAll(page, "__USER_EMAIL__", html.EscapeString(userEmail))
 	rendered = strings.ReplaceAll(rendered, "__ADMIN_LINK__", adminLink)
 	return strings.ReplaceAll(rendered, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
+}
+
+func renderMapPage(page string, r *http.Request, csrfToken string, mapTiles MapTileConfig) string {
+	mode := strings.ToLower(strings.TrimSpace(mapTiles.Mode))
+	if mode == "" {
+		mode = "none"
+	}
+	urlTemplate := strings.TrimSpace(mapTiles.URLTemplate)
+	attribution := strings.TrimSpace(mapTiles.Attribution)
+	if mode == "osm" && urlTemplate == "" {
+		urlTemplate = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+	}
+	if mode == "osm" && attribution == "" {
+		attribution = "&copy; OpenStreetMap contributors"
+	}
+
+	rendered := renderUIPage(page, r, csrfToken)
+	rendered = strings.ReplaceAll(rendered, "__MAP_TILE_MODE__", html.EscapeString(mode))
+	rendered = strings.ReplaceAll(rendered, "__MAP_TILE_URL_TEMPLATE__", html.EscapeString(urlTemplate))
+	return strings.ReplaceAll(rendered, "__MAP_TILE_ATTRIBUTION__", html.EscapeString(attribution))
 }
 
 func requireAdminHTML(next http.HandlerFunc) http.HandlerFunc {

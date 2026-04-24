@@ -25,6 +25,13 @@ services:
       APP_TRUST_PROXY_HEADERS: "false"
       APP_EXPECT_TLS_TERMINATION: "true"
       APP_ALLOW_INSECURE_HTTP: "false"
+      # Map tile privacy posture:
+      # - none: no external tile requests (default privacy mode)
+      # - custom: set APP_MAP_TILE_URL_TEMPLATE to your own/local tile server
+      # - osm: explicit opt-in to OpenStreetMap tiles
+      APP_MAP_TILE_MODE: "none"
+      APP_MAP_TILE_URL_TEMPLATE: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      APP_MAP_TILE_ATTRIBUTION: "&copy; OpenStreetMap contributors"
       APP_RATE_LIMIT_ENABLED: "true"
       APP_RATE_LIMIT_LOGIN_MAX_REQUESTS: "10"
       APP_RATE_LIMIT_LOGIN_WINDOW: "1m"

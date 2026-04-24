@@ -18,65 +18,11 @@ const loginPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Plexplore Login</title>
-  <style>
-    :root {
-      --bg: #f4f6f8;
-      --text: #1b1f24;
-      --card: #ffffff;
-      --border: #d7dde5;
-      --accent: #0b6bcb;
-      --muted: #5a6573;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 15px/1.45 "Segoe UI", Tahoma, sans-serif;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 16px;
-    }
-    .card {
-      width: 100%;
-      max-width: 360px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
-    }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 22px;
-    }
-    label { display: block; margin-top: 8px; }
-    input, button {
-      width: 100%;
-      margin-top: 4px;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font: inherit;
-    }
-    button {
-      margin-top: 12px;
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
-      cursor: pointer;
-    }
-    .error {
-      margin: 8px 0 4px;
-      color: #b42318;
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .muted { color: var(--muted); font-size: 13px; }
-  </style>
+  <link rel="stylesheet" href="/ui/assets/app/app.css">
+  <link rel="stylesheet" href="/ui/assets/app/login.css">
 </head>
-<body>
-  <form class="card" method="post" action="/login">
+<body class="login-body">
+  <form class="card login-wrap login-card" method="post" action="/login">
     <h1>Sign In</h1>
     __ERROR_BLOCK__
     <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">

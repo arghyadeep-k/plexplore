@@ -52,3 +52,34 @@ func TestLoad_DevelopmentExplicitInsecureCookieModeStillPossible(t *testing.T) {
 		t.Fatalf("expected explicit allow insecure http=true")
 	}
 }
+
+func TestLoad_DefaultMapTileConfigIsPrivacyPreserving(t *testing.T) {
+	t.Setenv("APP_MAP_TILE_MODE", "")
+	t.Setenv("APP_MAP_TILE_URL_TEMPLATE", "")
+	t.Setenv("APP_MAP_TILE_ATTRIBUTION", "")
+
+	cfg := Load()
+	if cfg.MapTileMode != "none" {
+		t.Fatalf("expected default map tile mode none, got %q", cfg.MapTileMode)
+	}
+	if cfg.MapTileURLTemplate == "" {
+		t.Fatalf("expected non-empty default tile url template")
+	}
+}
+
+func TestLoad_CustomMapTileConfig(t *testing.T) {
+	t.Setenv("APP_MAP_TILE_MODE", "custom")
+	t.Setenv("APP_MAP_TILE_URL_TEMPLATE", "http://tiles.local/{z}/{x}/{y}.png")
+	t.Setenv("APP_MAP_TILE_ATTRIBUTION", "local tile server")
+
+	cfg := Load()
+	if cfg.MapTileMode != "custom" {
+		t.Fatalf("expected custom map tile mode, got %q", cfg.MapTileMode)
+	}
+	if cfg.MapTileURLTemplate != "http://tiles.local/{z}/{x}/{y}.png" {
+		t.Fatalf("unexpected custom tile template: %q", cfg.MapTileURLTemplate)
+	}
+	if cfg.MapTileAttribution != "local tile server" {
+		t.Fatalf("unexpected custom tile attribution: %q", cfg.MapTileAttribution)
+	}
+}

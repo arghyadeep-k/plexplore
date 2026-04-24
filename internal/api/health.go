@@ -86,10 +86,21 @@ type Dependencies struct {
 	UserStore          UserStore
 	SessionStore       SessionStore
 	CookieSecurity     CookieSecurityPolicy
+	MapTiles           MapTileConfig
 	RateLimiters       RateLimiters
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
+}
+
+type MapTileConfig struct {
+	// Mode controls tile source behavior for map UI.
+	// Supported values: none, osm, custom.
+	Mode string
+	// URLTemplate is used when mode is osm/custom.
+	URLTemplate string
+	// Attribution is shown by Leaflet for external/custom tile providers.
+	Attribution string
 }
 
 func RegisterRoutes(mux *http.ServeMux) {

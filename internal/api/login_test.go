@@ -86,6 +86,16 @@ func TestLoginPageServed(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `name="csrf_token"`) {
 		t.Fatalf("expected csrf token field in login page, got %q", rec.Body.String())
 	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `/ui/assets/app/app.css`) || !strings.Contains(body, `/ui/assets/app/login.css`) {
+		t.Fatalf("expected external login css assets, got %q", body)
+	}
+	if strings.Contains(body, "<style>") {
+		t.Fatalf("expected no inline style tags on login page, got %q", body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "unsafe-inline") {
+		t.Fatalf("expected login CSP without unsafe-inline, got %q", got)
+	}
 }
 
 func TestLoginSuccessSetsSessionCookie(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:embed assets/leaflet/* assets/leaflet/images/*
+//go:embed assets/leaflet/* assets/leaflet/images/* assets/app/*
 var embeddedUIAssets embed.FS
 
 func registerUIAssetRoutes(mux *http.ServeMux) {
