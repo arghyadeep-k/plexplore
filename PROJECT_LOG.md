@@ -2296,6 +2296,47 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 06:19 UTC - Phase 84 (Clarify HSTS Ownership + Future In-App TLS Condition)
+Implemented:
+- Clarified HSTS strategy in README to remove ambiguity:
+- reverse proxy owns HSTS for current production topology
+- app should not emit HSTS on plain HTTP responses
+- in-app HSTS is future-only and should only be added if app directly terminates HTTPS/TLS
+- Added explicit note in security header middleware comment:
+- `setCommonSecurityHeaders(...)` intentionally does not set HSTS today
+- Added/updated tests to enforce no in-app HSTS expectation on local HTTP responses:
+- `internal/api/status_test.go` now checks `/health` does not include `Strict-Transport-Security`
+- `internal/api/ui_test.go` now checks status UI response does not include `Strict-Transport-Security`
+- Validated header behavior with local HTTP `curl -I` check:
+- response headers did not include `Strict-Transport-Security`
+
+Architectural decisions:
+- Decision: Keep HSTS exclusively at TLS-terminating reverse proxy layer until direct in-app HTTPS support exists.
+  Reason: Avoids misleading HTTP responses and keeps HTTPS policy enforcement at the actual TLS boundary.
+
+Files changed:
+- `README.md`
+- `internal/api/security_headers.go`
+- `internal/api/status_test.go`
+- `internal/api/ui_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/security_headers.go internal/api/status_test.go internal/api/ui_test.go`
+- `go test ./...`
+- `go run ./cmd/server`
+- `curl -I http://127.0.0.1:8080/`
+
+Pending:
+- If direct HTTPS termination is ever added to the app, revisit HSTS strategy and gate in-app HSTS emission behind explicit HTTPS-mode config.
+- Keep reverse-proxy HSTS examples aligned with deployment templates as proxy docs evolve.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 06:12 UTC - Phase 83 (Reverse Proxy HSTS Documentation + Examples)
 Implemented:
 - Added production reverse-proxy HSTS guidance to README.

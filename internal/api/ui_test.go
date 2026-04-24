@@ -53,6 +53,9 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if got := rec.Header().Get("Referrer-Policy"); got == "" {
 		t.Fatalf("expected Referrer-Policy header")
 	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("did not expect in-app HSTS on local HTTP status page, got %q", got)
+	}
 	if !strings.Contains(body, "Recent Points") {
 		t.Fatalf("expected recent points section in body, got %q", body)
 	}

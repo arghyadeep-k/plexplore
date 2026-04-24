@@ -255,4 +255,7 @@ func TestHealthEndpoint_RemainsPublic(t *testing.T) {
 	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("expected nosniff header on /health, got %q", got)
 	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("did not expect in-app HSTS on local HTTP /health, got %q", got)
+	}
 }

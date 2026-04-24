@@ -6,6 +6,8 @@ const defaultCSPPolicy = "default-src 'self'; base-uri 'self'; form-action 'self
 
 func setCommonSecurityHeaders(w http.ResponseWriter) {
 	headers := w.Header()
+	// HSTS is intentionally not set in-app today.
+	// Production HSTS is owned by the HTTPS reverse proxy layer.
 	headers.Set("X-Frame-Options", "DENY")
 	headers.Set("X-Content-Type-Options", "nosniff")
 	headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")

@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Current milestone
-Production proxy hardening docs expanded (HSTS guidance + reverse proxy examples in README)
+HSTS strategy clarified (reverse proxy owns HSTS today; in-app HSTS is future-only with direct TLS termination)
 
 ## Next 3 tasks
 1. Validate production reverse-proxy headers in staging (HSTS + forwarded proto + cookie behavior)
@@ -13,6 +13,7 @@ Production proxy hardening docs expanded (HSTS guidance + reverse proxy examples
 - `curl -I https://your-domain.example`
 - `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
 - `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`
+- `curl -I http://127.0.0.1:8080/`
 - `go test ./internal/config -count=1`
 - `go test ./cmd/server -count=1`
 - `go test ./internal/api -run 'TestRuntimeRouter_' -count=1`
@@ -114,6 +115,7 @@ Baseline browser security headers are now applied, with CSP currently allowing `
 Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
 Shared protected route helpers now panic on missing required auth deps to enforce fail-closed registration in future entrypoints.
 HSTS is now documented as reverse-proxy responsibility for production TLS deployments; local HTTP dev should not use HSTS.
+In-app HSTS should only be added in the future if app-level direct HTTPS termination is implemented and explicitly enabled.
 Insecure local HTTP mode now requires explicit `APP_ALLOW_INSECURE_HTTP=true` when `APP_COOKIE_SECURE_MODE=never`.
 Production mode now fails fast unless `APP_COOKIE_SECURE_MODE=always`, and rejects `APP_ALLOW_INSECURE_HTTP=true`.
 On transient SQLite failure, keep drained records by requeueing them to the RAM buffer front.

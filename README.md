@@ -563,6 +563,7 @@ Baseline browser security headers:
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Permissions-Policy: geolocation=(), camera=(), microphone=()`
+- `Strict-Transport-Security` is intentionally not emitted by the app today (reverse proxy owns HSTS for production TLS deployments)
 
 CSP notes:
 - current UI pages use inline `<style>` and `<script>`, so CSP currently allows `'unsafe-inline'` for styles/scripts to avoid breaking existing lightweight pages
@@ -646,6 +647,9 @@ Deployment guidance:
 
 In production, TLS should terminate at the reverse proxy. HSTS should be set at
 that reverse proxy layer, not in the app.
+The app must not emit HSTS on plain HTTP responses.
+In-app HSTS should only be added in a future version if the app directly
+terminates HTTPS/TLS itself.
 
 - Plexplore app:
 - listen on localhost/private network only
