@@ -339,3 +339,62 @@ func TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder(t *testing.T) {
 		t.Fatalf("expected ascending seq order [1,2], got %+v", all)
 	}
 }
+
+func TestSQLiteStore_ListPoints_WithCursorPagination(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+
+	records := []ingest.SpoolRecord{
+		testSpoolRecord(1, "d1", "hash-cursor-1", base),
+		testSpoolRecord(2, "d1", "hash-cursor-2", base.Add(30*time.Second)),
+		testSpoolRecord(3, "d1", "hash-cursor-3", base.Add(60*time.Second)),
+	}
+	if _, err := s.InsertSpoolBatch(records); err != nil {
+		t.Fatalf("InsertSpoolBatch failed: %v", err)
+	}
+
+	page1, err := s.ListPoints(context.Background(), ExportPointFilter{AfterSeq: 0}, 2)
+	if err != nil {
+		t.Fatalf("ListPoints page1 failed: %v", err)
+	}
+	if len(page1) != 2 || page1[0].Seq != 1 || page1[1].Seq != 2 {
+		t.Fatalf("unexpected page1 %+v", page1)
+	}
+
+	page2, err := s.ListPoints(context.Background(), ExportPointFilter{AfterSeq: 2}, 2)
+	if err != nil {
+		t.Fatalf("ListPoints page2 failed: %v", err)
+	}
+	if len(page2) != 1 || page2[0].Seq != 3 {
+		t.Fatalf("unexpected page2 %+v", page2)
+	}
+}
+
+func TestSQLiteStore_StreamPointsForExport_WithLimit(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+
+	records := []ingest.SpoolRecord{
+		testSpoolRecord(1, "d1", "hash-stream-1", base),
+		testSpoolRecord(2, "d1", "hash-stream-2", base.Add(30*time.Second)),
+		testSpoolRecord(3, "d1", "hash-stream-3", base.Add(60*time.Second)),
+	}
+	if _, err := s.InsertSpoolBatch(records); err != nil {
+		t.Fatalf("InsertSpoolBatch failed: %v", err)
+	}
+
+	gotSeq := make([]uint64, 0, 2)
+	count, err := s.StreamPointsForExport(context.Background(), ExportPointFilter{DeviceID: "d1"}, 2, func(point RecentPoint) error {
+		gotSeq = append(gotSeq, point.Seq)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamPointsForExport failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected stream count=2, got %d", count)
+	}
+	if len(gotSeq) != 2 || gotSeq[0] != 1 || gotSeq[1] != 2 {
+		t.Fatalf("unexpected streamed seqs %+v", gotSeq)
+	}
+}

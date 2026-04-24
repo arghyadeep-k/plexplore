@@ -4066,3 +4066,62 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 17:11 UTC - Phase 84 (Points Pagination + Streamed Exports)
+Implemented:
+- Added hard-capped pagination for `GET /api/v1/points`:
+- `limit` now defaults to `500` and is hard-capped at `1000`
+- new `cursor` query param (based on `seq`) for forward pagination
+- response now includes `next_cursor` when additional rows are available
+- Updated points query path to request `limit+1` and compute next-page metadata without loading unnecessary rows.
+- Added owner scoping directly in point/export SQL filter (`user_id`) to avoid cross-user post-filtering buffers.
+- Added export streaming path to reduce RAM usage:
+- new store callback method `StreamPointsForExport(...)`
+- GeoJSON export now streams FeatureCollection entries row-by-row
+- GPX export now streams `<trkpt>` entries row-by-row
+- export routes support optional `limit` with default `5000` and hard cap `20000`
+- Added downloadable filename headers:
+- GeoJSON: `Content-Disposition: attachment; filename="plexplore-export.geojson"`
+- GPX: `Content-Disposition: attachment; filename="plexplore-export.gpx"`
+- Preserved existing filters: `device_id`, `from`, `to`.
+- Added/updated tests for:
+- points limit cap behavior
+- points cursor pagination behavior
+- export limit cap behavior
+- export streamed code path usage and content-type/header correctness
+- store-level cursor and stream iteration behavior
+
+Architectural decisions:
+- Decision: Use cursor pagination (`seq`) instead of offset pagination for point history.
+  Reason: Cursor pagination is simpler, stable for append-heavy workloads, and avoids expensive offset scans.
+- Decision: Stream export responses directly from SQLite row iteration.
+  Reason: Avoids large in-memory slices during export on Raspberry Pi Zero 2 W.
+
+Files changed:
+- `internal/api/points.go`
+- `internal/api/exports.go`
+- `internal/api/health.go`
+- `internal/api/points_test.go`
+- `internal/api/exports_test.go`
+- `internal/store/points.go`
+- `internal/store/sqlite_store_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/points.go internal/api/health.go internal/api/points.go internal/api/exports.go internal/api/points_test.go internal/api/exports_test.go internal/store/sqlite_store_test.go`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/api -run 'Test(PointsEndpoint_LimitCapApplied|PointsEndpoint_PaginationCursor|GeoJSONExport_ValidStructure|GPXExport_ValidStructureAndContent|ExportEndpoints_LimitCapApplied)' -count=1`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+- `timeout 6s go run ./cmd/server`
+
+Pending:
+- Optional follow-up: add stable export cursor/chunk checkpoint API for resumable very-large exports over unreliable links.
+- Keep previously tracked follow-ups: authenticated `/ui/admin/devices` smoke test, dynamic CSP `img-src` tightening by tile mode, and migration fixture for `0005` partial state.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

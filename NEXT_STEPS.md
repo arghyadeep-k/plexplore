@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Current milestone
-Operational backup/restore workflow complete (SQLite + spool/checkpoint scripts and docs)
+Low-RAM query/export hardening complete (points cursor pagination + streamed GeoJSON/GPX exports)
 
 ## Next 3 tasks
 1. Add authenticated browser smoke test coverage for `/login` -> `/ui/admin/devices` and validate create/rotate/generate actions with CSRF flow
@@ -11,8 +11,10 @@ Operational backup/restore workflow complete (SQLite + spool/checkpoint scripts 
 ## Commands
 - `go test ./...`
 - `go test ./internal/api`
+- `go test ./internal/store`
 - `gofmt -w internal/api/*.go internal/tasks/*.go cmd/migrate/*.go`
 - `timeout 6s go run ./cmd/server`
+- `go test ./internal/api -run 'Test(PointsEndpoint_LimitCapApplied|PointsEndpoint_PaginationCursor|GeoJSONExport_ValidStructure|GPXExport_ValidStructureAndContent|ExportEndpoints_LimitCapApplied)' -count=1`
 - `bash -n scripts/backup.sh scripts/restore.sh`
 - `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir ./backups`
 - `scripts/restore.sh --archive ./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz --sqlite-path ./data/plexplore.db --spool-dir ./data/spool`

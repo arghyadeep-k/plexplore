@@ -23,6 +23,11 @@ type ExportPointFilter struct {
 	DeviceID string
 	FromUTC  *time.Time
 	ToUTC    *time.Time
+	// AfterSeq enables cursor pagination for ascending point queries.
+	// When > 0, only rows with seq > AfterSeq are returned.
+	AfterSeq uint64
+	// UserID scopes queries to a specific owner when non-zero.
+	UserID int64
 }
 
 func (s *SQLiteStore) ListRecentPoints(ctx context.Context, deviceID string, limit int) ([]RecentPoint, error) {
@@ -96,13 +101,17 @@ FROM raw_points rp
 JOIN devices d ON d.id = rp.device_id
 `
 
-	whereParts := make([]string, 0, 3)
-	args := make([]any, 0, 4)
+	whereParts := make([]string, 0, 5)
+	args := make([]any, 0, 6)
 
 	device := strings.TrimSpace(filter.DeviceID)
 	if device != "" {
 		whereParts = append(whereParts, "d.name = ?")
 		args = append(args, device)
+	}
+	if filter.UserID > 0 {
+		whereParts = append(whereParts, "rp.user_id = ?")
+		args = append(args, filter.UserID)
 	}
 	if filter.FromUTC != nil {
 		whereParts = append(whereParts, "rp.timestamp_utc >= ?")
@@ -111,6 +120,10 @@ JOIN devices d ON d.id = rp.device_id
 	if filter.ToUTC != nil {
 		whereParts = append(whereParts, "rp.timestamp_utc <= ?")
 		args = append(args, filter.ToUTC.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.AfterSeq > 0 {
+		whereParts = append(whereParts, "rp.seq > ?")
+		args = append(args, filter.AfterSeq)
 	}
 
 	if len(whereParts) > 0 {
@@ -151,6 +164,91 @@ JOIN devices d ON d.id = rp.device_id
 		return nil, fmt.Errorf("iterate points: %w", err)
 	}
 	return out, nil
+}
+
+func (s *SQLiteStore) StreamPointsForExport(ctx context.Context, filter ExportPointFilter, limit int, fn func(RecentPoint) error) (int, error) {
+	if fn == nil {
+		return 0, fmt.Errorf("stream callback is required")
+	}
+	if limit <= 0 {
+		limit = 5000
+	}
+	if limit > 50000 {
+		limit = 50000
+	}
+
+	baseSQL := `
+SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+FROM raw_points rp
+JOIN devices d ON d.id = rp.device_id
+`
+
+	whereParts := make([]string, 0, 5)
+	args := make([]any, 0, 6)
+
+	device := strings.TrimSpace(filter.DeviceID)
+	if device != "" {
+		whereParts = append(whereParts, "d.name = ?")
+		args = append(args, device)
+	}
+	if filter.UserID > 0 {
+		whereParts = append(whereParts, "rp.user_id = ?")
+		args = append(args, filter.UserID)
+	}
+	if filter.FromUTC != nil {
+		whereParts = append(whereParts, "rp.timestamp_utc >= ?")
+		args = append(args, filter.FromUTC.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.ToUTC != nil {
+		whereParts = append(whereParts, "rp.timestamp_utc <= ?")
+		args = append(args, filter.ToUTC.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.AfterSeq > 0 {
+		whereParts = append(whereParts, "rp.seq > ?")
+		args = append(args, filter.AfterSeq)
+	}
+
+	if len(whereParts) > 0 {
+		baseSQL += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
+	}
+	baseSQL += "ORDER BY rp.timestamp_utc ASC, rp.seq ASC\nLIMIT ?;"
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, baseSQL, args...)
+	if err != nil {
+		return 0, fmt.Errorf("stream export points: %w", err)
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var point RecentPoint
+		var timestampRaw string
+		if err := rows.Scan(
+			&point.Seq,
+			&point.UserID,
+			&point.DeviceID,
+			&point.SourceType,
+			&timestampRaw,
+			&point.Lat,
+			&point.Lon,
+		); err != nil {
+			return count, fmt.Errorf("scan export point: %w", err)
+		}
+		parsed, parseErr := parseDBTime(timestampRaw)
+		if parseErr != nil {
+			return count, fmt.Errorf("parse export point timestamp: %w", parseErr)
+		}
+		point.TimestampUTC = parsed
+		if err := fn(point); err != nil {
+			return count, err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return count, fmt.Errorf("iterate export points: %w", err)
+	}
+	return count, nil
 }
 
 func (s *SQLiteStore) ListPointsForExport(ctx context.Context, filter ExportPointFilter) ([]RecentPoint, error) {

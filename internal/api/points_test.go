@@ -17,6 +17,7 @@ type fakePointStore struct {
 	points           []store.RecentPoint
 	lastExportFilter store.ExportPointFilter
 	lastPointsFilter store.ExportPointFilter
+	streamCalled     bool
 }
 
 func (f *fakePointStore) ListRecentPoints(_ context.Context, deviceID string, limit int) ([]store.RecentPoint, error) {
@@ -34,11 +35,63 @@ func (f *fakePointStore) ListPointsForExport(_ context.Context, filter store.Exp
 	return out, nil
 }
 
+func (f *fakePointStore) StreamPointsForExport(_ context.Context, filter store.ExportPointFilter, limit int, fn func(store.RecentPoint) error) (int, error) {
+	f.streamCalled = true
+	f.lastExportFilter = filter
+	f.lastLimit = limit
+	count := 0
+	for _, p := range f.points {
+		if filter.UserID > 0 && p.UserID != filter.UserID {
+			continue
+		}
+		if filter.DeviceID != "" && p.DeviceID != filter.DeviceID {
+			continue
+		}
+		if filter.FromUTC != nil && p.TimestampUTC.Before(*filter.FromUTC) {
+			continue
+		}
+		if filter.ToUTC != nil && p.TimestampUTC.After(*filter.ToUTC) {
+			continue
+		}
+		if filter.AfterSeq > 0 && p.Seq <= filter.AfterSeq {
+			continue
+		}
+		if count >= limit {
+			break
+		}
+		if err := fn(p); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (f *fakePointStore) ListPoints(_ context.Context, filter store.ExportPointFilter, limit int) ([]store.RecentPoint, error) {
 	f.lastPointsFilter = filter
 	f.lastLimit = limit
-	out := make([]store.RecentPoint, len(f.points))
-	copy(out, f.points)
+	out := make([]store.RecentPoint, 0, len(f.points))
+	for _, p := range f.points {
+		if filter.UserID > 0 && p.UserID != filter.UserID {
+			continue
+		}
+		if filter.DeviceID != "" && p.DeviceID != filter.DeviceID {
+			continue
+		}
+		if filter.FromUTC != nil && p.TimestampUTC.Before(*filter.FromUTC) {
+			continue
+		}
+		if filter.ToUTC != nil && p.TimestampUTC.After(*filter.ToUTC) {
+			continue
+		}
+		if filter.AfterSeq > 0 && p.Seq <= filter.AfterSeq {
+			continue
+		}
+		out = append(out, p)
+		if len(out) >= limit {
+			break
+		}
+	}
 	return out, nil
 }
 
@@ -65,8 +118,8 @@ func TestPointsEndpoint_DefaultQuery(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pointStore.lastLimit != 500 {
-		t.Fatalf("expected default limit 500, got %d", pointStore.lastLimit)
+	if pointStore.lastLimit != defaultPointsLimit+1 {
+		t.Fatalf("expected query limit 501 (default+1 for pagination check), got %d", pointStore.lastLimit)
 	}
 	if pointStore.lastPointsFilter.DeviceID != "" || pointStore.lastPointsFilter.FromUTC != nil || pointStore.lastPointsFilter.ToUTC != nil {
 		t.Fatalf("expected empty default filter, got %+v", pointStore.lastPointsFilter)
@@ -105,8 +158,8 @@ func TestPointsEndpoint_DeviceFiltering(t *testing.T) {
 	if pointStore.lastPointsFilter.DeviceID != "phone-main" {
 		t.Fatalf("expected device filter phone-main, got %+v", pointStore.lastPointsFilter)
 	}
-	if pointStore.lastLimit != 20 {
-		t.Fatalf("expected limit=20, got %d", pointStore.lastLimit)
+	if pointStore.lastLimit != 21 {
+		t.Fatalf("expected query limit=21 (limit+1), got %d", pointStore.lastLimit)
 	}
 }
 
@@ -119,6 +172,7 @@ func TestPointsEndpoint_InvalidQueryParams(t *testing.T) {
 		"/api/v1/points?from=not-a-time",
 		"/api/v1/points?to=not-a-time",
 		"/api/v1/points?limit=bad",
+		"/api/v1/points?cursor=bad",
 	}
 	for _, path := range cases {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -127,6 +181,73 @@ func TestPointsEndpoint_InvalidQueryParams(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for %q, got %d body=%s", path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestPointsEndpoint_LimitCapApplied(t *testing.T) {
+	pointStore := &fakePointStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?limit=999999", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if pointStore.lastLimit != maxPointsLimit+1 {
+		t.Fatalf("expected capped query limit %d, got %d", maxPointsLimit+1, pointStore.lastLimit)
+	}
+}
+
+func TestPointsEndpoint_PaginationCursor(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC), Lat: 1, Lon: 1},
+			{Seq: 2, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 1, 0, 0, time.UTC), Lat: 2, Lon: 2},
+			{Seq: 3, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 2, 0, 0, time.UTC), Lat: 3, Lon: 3},
+		},
+	}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{
+		PointStore:   pointStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"tok": {Token: "tok", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?limit=2", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var first pointsPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("unmarshal first page failed: %v", err)
+	}
+	if len(first.Points) != 2 || first.NextCursor == nil || *first.NextCursor != 2 {
+		t.Fatalf("unexpected first page %+v", first)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/points?limit=2&cursor=2", nil)
+	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok"})
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	var second pointsPageResponse
+	if err := json.Unmarshal(rec2.Body.Bytes(), &second); err != nil {
+		t.Fatalf("unmarshal second page failed: %v", err)
+	}
+	if len(second.Points) != 1 || second.Points[0].Seq != 3 {
+		t.Fatalf("unexpected second page %+v", second)
+	}
+	if second.NextCursor != nil {
+		t.Fatalf("expected no next cursor on last page, got %+v", second.NextCursor)
 	}
 }
 

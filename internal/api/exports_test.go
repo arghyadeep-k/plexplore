@@ -36,8 +36,17 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/geo+json") {
+		t.Fatalf("expected geojson content type, got %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.geojson") {
+		t.Fatalf("expected download filename header, got %q", rec.Header().Get("Content-Disposition"))
+	}
 	if pointStore.lastExportFilter.DeviceID != "phone-main" {
 		t.Fatalf("expected device filter phone-main, got %+v", pointStore.lastExportFilter)
+	}
+	if !pointStore.streamCalled {
+		t.Fatalf("expected streamed export path to be used")
 	}
 	if pointStore.lastExportFilter.FromUTC == nil || pointStore.lastExportFilter.ToUTC == nil {
 		t.Fatalf("expected from/to filters set, got %+v", pointStore.lastExportFilter)
@@ -121,6 +130,12 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	if !strings.Contains(rec.Header().Get("Content-Type"), "application/gpx+xml") {
 		t.Fatalf("expected GPX content type, got %q", rec.Header().Get("Content-Type"))
 	}
+	if !pointStore.streamCalled {
+		t.Fatalf("expected streamed export path to be used")
+	}
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.gpx") {
+		t.Fatalf("expected GPX download filename header, got %q", rec.Header().Get("Content-Disposition"))
+	}
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "<gpx") || !strings.Contains(body, "<trkpt") {
@@ -139,6 +154,37 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	}
 	if parsed.Track.Segment.Points[0].Lat != 41.2 || parsed.Track.Segment.Points[0].Lon != -87.2 {
 		t.Fatalf("unexpected first track point %+v", parsed.Track.Segment.Points[0])
+	}
+}
+
+func TestExportEndpoints_LimitCapApplied(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, DeviceID: "phone-main", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 1, Lon: 1},
+		},
+	}
+
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	reqGeo := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?limit=999999", nil)
+	recGeo := httptest.NewRecorder()
+	mux.ServeHTTP(recGeo, reqGeo)
+	if recGeo.Code != http.StatusOK {
+		t.Fatalf("expected geojson 200, got %d body=%s", recGeo.Code, recGeo.Body.String())
+	}
+	if pointStore.lastLimit != maxExportLimit {
+		t.Fatalf("expected geojson cap %d, got %d", maxExportLimit, pointStore.lastLimit)
+	}
+
+	reqGPX := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?limit=999999", nil)
+	recGPX := httptest.NewRecorder()
+	mux.ServeHTTP(recGPX, reqGPX)
+	if recGPX.Code != http.StatusOK {
+		t.Fatalf("expected gpx 200, got %d body=%s", recGPX.Code, recGPX.Body.String())
+	}
+	if pointStore.lastLimit != maxExportLimit {
+		t.Fatalf("expected gpx cap %d, got %d", maxExportLimit, pointStore.lastLimit)
 	}
 }
 

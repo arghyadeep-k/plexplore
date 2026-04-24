@@ -1,12 +1,20 @@
 package api
 
 import (
+	"bufio"
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"plexplore/internal/store"
+)
+
+const (
+	defaultExportLimit = 5000
+	maxExportLimit     = 20000
 )
 
 type geoJSONFeatureCollection struct {
@@ -57,46 +65,31 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		allowedDeviceIDs := map[string]struct{}{}
-		currentUserID := int64(0)
-		if deviceStore != nil {
-			currentUser, ok := CurrentUserFromContext(r.Context())
-			if !ok {
-				writeJSONError(w, http.StatusUnauthorized, "authentication required")
-				return
-			}
-			currentUserID = currentUser.ID
-			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
-			if err != nil {
-				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
-				return
-			}
-			if filter.DeviceID != "" {
-				if _, ok := allowedDeviceIDs[filter.DeviceID]; !ok {
-					writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
-					return
-				}
-			}
-		}
-
-		points, err := pointStore.ListPointsForExport(r.Context(), filter)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+		currentUser, ok := CurrentUserFromContext(r.Context())
+		if deviceStore != nil && !ok {
+			writeJSONError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		if deviceStore != nil {
-			filtered := make([]store.RecentPoint, 0, len(points))
-			for _, point := range points {
-				if _, ok := allowedDeviceIDs[point.DeviceID]; ok && point.UserID == currentUserID {
-					filtered = append(filtered, point)
-				}
-			}
-			points = filtered
+		if ok {
+			filter.UserID = currentUser.ID
 		}
 
-		features := make([]geoJSONFeature, 0, len(points))
-		for _, point := range points {
-			features = append(features, geoJSONFeature{
+		limit, err := parseOptionalLimitParamWithMax(r, defaultExportLimit, maxExportLimit)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.geojson"`)
+		w.WriteHeader(http.StatusOK)
+
+		bw := bufio.NewWriterSize(w, 16*1024)
+		_, _ = bw.WriteString(`{"type":"FeatureCollection","features":[`)
+
+		first := true
+		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+			feature := geoJSONFeature{
 				Type: "Feature",
 				Geometry: geoJSONGeometry{
 					Type:        "Point",
@@ -108,13 +101,26 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 					"source_type":   point.SourceType,
 					"timestamp_utc": point.TimestampUTC.UTC().Format(time.RFC3339Nano),
 				},
-			})
-		}
-
-		writeJSON(w, http.StatusOK, geoJSONFeatureCollection{
-			Type:     "FeatureCollection",
-			Features: features,
+			}
+			blob, marshalErr := json.Marshal(feature)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			if !first {
+				if _, writeErr := bw.WriteString(","); writeErr != nil {
+					return writeErr
+				}
+			}
+			first = false
+			_, writeErr := bw.Write(blob)
+			return writeErr
 		})
+		if err != nil {
+			http.Error(w, "failed to stream geojson export", http.StatusInternalServerError)
+			return
+		}
+		_, _ = bw.WriteString("]}")
+		_ = bw.Flush()
 	}
 }
 
@@ -189,65 +195,46 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		allowedDeviceIDs := map[string]struct{}{}
-		currentUserID := int64(0)
-		if deviceStore != nil {
-			currentUser, ok := CurrentUserFromContext(r.Context())
-			if !ok {
-				writeJSONError(w, http.StatusUnauthorized, "authentication required")
-				return
-			}
-			currentUserID = currentUser.ID
-			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
-			if err != nil {
-				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
-				return
-			}
-			if filter.DeviceID != "" {
-				if _, ok := allowedDeviceIDs[filter.DeviceID]; !ok {
-					writeEmptyGPX(w)
-					return
-				}
-			}
-		}
-
-		points, err := pointStore.ListPointsForExport(r.Context(), filter)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+		currentUser, ok := CurrentUserFromContext(r.Context())
+		if deviceStore != nil && !ok {
+			writeJSONError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		if deviceStore != nil {
-			filtered := make([]store.RecentPoint, 0, len(points))
-			for _, point := range points {
-				if _, ok := allowedDeviceIDs[point.DeviceID]; ok && point.UserID == currentUserID {
-					filtered = append(filtered, point)
-				}
-			}
-			points = filtered
+		if ok {
+			filter.UserID = currentUser.ID
 		}
 
-		trackPoints := make([]gpxTrackPt, 0, len(points))
-		for _, point := range points {
-			trackPoints = append(trackPoints, gpxTrackPt{
-				Lat:  point.Lat,
-				Lon:  point.Lon,
-				Time: point.TimestampUTC.UTC().Format(time.RFC3339Nano),
-			})
+		limit, err := parseOptionalLimitParamWithMax(r, defaultExportLimit, maxExportLimit)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 
-		doc := gpxDocument{
-			Version: "1.1",
-			Creator: "plexplore",
-			XMLNS:   "http://www.topografix.com/GPX/1/1",
-			Track: gpxTrack{
-				Name: "plexplore-export",
-				Segment: gpxTrackSeg{
-					Points: trackPoints,
-				},
-			},
-		}
+		w.Header().Set("Content-Type", "application/gpx+xml; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.gpx"`)
+		w.WriteHeader(http.StatusOK)
 
-		writeGPXDoc(w, doc)
+		bw := bufio.NewWriterSize(w, 16*1024)
+		_, _ = bw.WriteString(xml.Header)
+		_, _ = bw.WriteString(`<gpx version="1.1" creator="plexplore" xmlns="http://www.topografix.com/GPX/1/1">`)
+		_, _ = bw.WriteString(`<trk><name>plexplore-export</name><trkseg>`)
+
+		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+			_, writeErr := fmt.Fprintf(
+				bw,
+				`<trkpt lat="%f" lon="%f"><time>%s</time></trkpt>`,
+				point.Lat,
+				point.Lon,
+				point.TimestampUTC.UTC().Format(time.RFC3339Nano),
+			)
+			return writeErr
+		})
+		if err != nil {
+			http.Error(w, "failed to stream gpx export", http.StatusInternalServerError)
+			return
+		}
+		_, _ = bw.WriteString(`</trkseg></trk></gpx>`)
+		_ = bw.Flush()
 	}
 }
 
