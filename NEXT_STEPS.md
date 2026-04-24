@@ -114,6 +114,7 @@ Leaflet map assets are now self-hosted under `/ui/assets/leaflet/*`; CDN referen
 Baseline browser security headers are now applied, with CSP currently allowing `'unsafe-inline'` on HTML pages to preserve existing inline UI scripts/styles.
 Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
 Shared protected route helpers now panic on missing required auth deps to enforce fail-closed registration in future entrypoints.
+Route helper fallback audit re-verified: no remaining permissive runtime helper branches were found.
 HSTS is now documented as reverse-proxy responsibility for production TLS deployments; local HTTP dev should not use HSTS.
 In-app HSTS should only be added in the future if app-level direct HTTPS termination is implemented and explicitly enabled.
 Insecure local HTTP mode now requires explicit `APP_ALLOW_INSECURE_HTTP=true` when `APP_COOKIE_SECURE_MODE=never`.

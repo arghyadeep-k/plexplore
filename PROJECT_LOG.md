@@ -2296,6 +2296,45 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 06:24 UTC - Phase 85 (Route Helper Fallback Audit Verification)
+Implemented:
+- Audited shared runtime route helper functions to verify no remaining permissive fallback registrations exist.
+- Confirmed shared helpers are fail-closed and dependency-explicit:
+- `registerDeviceRoutesWithAuth` requires `deviceStore + userStore + sessionStore` and panics if missing
+- `registerPointRoutes` requires `pointStore + deviceStore + userStore + sessionStore` and panics if missing
+- `registerExportRoutes` requires `pointStore + deviceStore + userStore + sessionStore` and panics if missing
+- `registerVisitRoutes` requires `visitStore + deviceStore + userStore + sessionStore` and panics if missing
+- `registerUIRoutes` requires `userStore + sessionStore` and panics if missing
+- `registerUserRoutes` requires `userStore + sessionStore` and panics if missing
+- Confirmed runtime registration path remains explicit/fail-closed in `RegisterRoutesWithDependencies(...)` (protected routes only registered when required deps are present).
+- Confirmed permissive route wiring remains test-only via `registerRoutesWithTestFallbacks(...)` in `*_test.go`.
+- Re-ran focused route-security tests to validate:
+- helper fail-closed behavior
+- protected route unauth denial
+- alias protection consistency
+- admin denial for non-admin sessions
+- typo/unknown 404 behavior
+
+Architectural decisions:
+- Decision: No additional runtime code changes required in this task.
+  Reason: Shared route helper fallback removal and fail-closed contracts were already correctly implemented; this task is verified complete by audit + tests.
+
+Files changed:
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `rg -n "func register(DeviceRoutesWithAuth|PointRoutes|ExportRoutes|VisitRoutes|UIRoutes|UserRoutes|StatusRoutes)|RegisterRoutesWithDependencies|registerRoutesWithTestFallbacks" internal/api/*.go internal/api/*_test.go`
+- `go test ./internal/api -run 'Test(RuntimeRouter_|RouteHelpers_FailClosed_WhenAuthDepsMissing|UIRoutesRequireSession_WhenSessionDepsProvided|StatusPage_DoesNotMatchTypoPath|AdminUsersPageDeniedForNonAdminSession|HealthEndpoint_RemainsPublic)' -count=1`
+
+Pending:
+- Optional: add small package-level comments in route helper files documenting required dependencies explicitly near each helper signature.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 06:19 UTC - Phase 84 (Clarify HSTS Ownership + Future In-App TLS Condition)
 Implemented:
 - Clarified HSTS strategy in README to remove ambiguity:
