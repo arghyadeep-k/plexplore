@@ -29,7 +29,26 @@
     const device = document.getElementById("device_select").value.trim();
     const fromDate = document.getElementById("date_from").value.trim();
     const toDate = document.getElementById("date_to").value.trim();
-    const limit = document.getElementById("limit").value.trim();
+    const limitRaw = document.getElementById("limit").value.trim();
+    const requestedMaxPoints = Math.max(100, Number(limitRaw) || 1500);
+    let fetchLimit = requestedMaxPoints;
+    let simplify = false;
+    let simplifyMaxPoints = requestedMaxPoints;
+
+    if (requestedMaxPoints <= 2000) {
+      simplify = false;
+      fetchLimit = requestedMaxPoints;
+      simplifyMaxPoints = requestedMaxPoints;
+    } else if (requestedMaxPoints <= 8000) {
+      simplify = true;
+      fetchLimit = requestedMaxPoints;
+      simplifyMaxPoints = 2000;
+    } else {
+      simplify = true;
+      fetchLimit = requestedMaxPoints;
+      simplifyMaxPoints = 1000;
+    }
+
     if (device) {
       params.set("device_id", device);
     }
@@ -39,9 +58,9 @@
     if (toDate) {
       params.set("to", dayEndRFC3339(toDate));
     }
-    if (limit) {
-      params.set("limit", limit);
-    }
+    params.set("limit", String(fetchLimit));
+    params.set("simplify", simplify ? "true" : "false");
+    params.set("max_points", String(simplifyMaxPoints));
     return "/api/v1/points?" + params.toString();
   }
 
@@ -219,8 +238,12 @@
 
   function loadPointsAndVisits() {
     const meta = document.getElementById("meta");
+    const samplingNote = document.getElementById("sampling_note");
     const pointsPath = buildPointsQuery();
     meta.textContent = "Loading " + pointsPath;
+    if (samplingNote) {
+      samplingNote.textContent = "";
+    }
 
     trackLayer.clearLayers();
     visitLayer.clearLayers();
@@ -233,9 +256,11 @@
         return res.json();
       })
       .then(function (payload) {
-        const points = (payload && payload.points) || [];
-        let visitsCount = 0;
-        let visitsWarning = "";
+            const points = (payload && payload.points) || [];
+            const sampled = Boolean(payload && payload.sampled);
+            const sampledFrom = Number((payload && payload.sampled_from) || 0);
+            let visitsCount = 0;
+            let visitsWarning = "";
         return loadVisits()
           .then(function (visits) {
             visitsCount = visits.length;
@@ -259,7 +284,9 @@
             const poly = L.polyline(latlngs, { color: "#0b6bcb", weight: 3 }).addTo(trackLayer);
             map.fitBounds(poly.getBounds(), { padding: [16, 16] });
 
+            let markerMode = "none";
             if (points.length <= 500) {
+              markerMode = "full";
               for (const p of points) {
                 L.circleMarker([p.lat, p.lon], { radius: 3, weight: 1 })
                   .bindPopup(
@@ -272,17 +299,71 @@
                   )
                   .addTo(trackLayer);
               }
+            } else if (points.length <= 3000) {
+              markerMode = "clustered";
+              renderClusteredMarkers(points);
             }
 
             meta.textContent =
               (visitsCount > 0
                 ? "Loaded " + points.length + " points | " + visitsCount + " visits shown"
                 : "Loaded " + points.length + " points | no visits for filter") + visitsWarning;
+            if (samplingNote) {
+              const notes = [];
+              if (sampled && sampledFrom > points.length) {
+                notes.push("Track sampled: showing " + points.length + " of " + sampledFrom + " fetched points.");
+              }
+              if (markerMode === "clustered") {
+                notes.push("Markers are clustered for performance.");
+              } else if (markerMode === "none") {
+                notes.push("Markers hidden for very large result sets; polyline still shows route.");
+              }
+              samplingNote.textContent = notes.join(" ");
+            }
           });
       })
       .catch(function (err) {
         meta.textContent = "Load failed: " + err.message;
       });
+  }
+
+  function renderClusteredMarkers(points) {
+    const zoom = Math.max(1, map.getZoom());
+    const cellDeg = Math.max(0.001, (360 / (Math.pow(2, zoom) * 256)) * 36);
+    const clusters = new Map();
+
+    for (const p of points) {
+      const keyLat = Math.round(p.lat / cellDeg);
+      const keyLon = Math.round(p.lon / cellDeg);
+      const key = keyLat + ":" + keyLon;
+      let bucket = clusters.get(key);
+      if (!bucket) {
+        bucket = { count: 0, latSum: 0, lonSum: 0 };
+        clusters.set(key, bucket);
+      }
+      bucket.count += 1;
+      bucket.latSum += p.lat;
+      bucket.lonSum += p.lon;
+    }
+
+    clusters.forEach(function (bucket) {
+      const lat = bucket.latSum / bucket.count;
+      const lon = bucket.lonSum / bucket.count;
+      if (bucket.count <= 1) {
+        L.circleMarker([lat, lon], { radius: 3, weight: 1 }).addTo(trackLayer);
+        return;
+      }
+      const radius = Math.max(6, Math.min(15, 4 + Math.log2(bucket.count + 1) * 2));
+      L.circleMarker([lat, lon], {
+        radius: radius,
+        color: "#0b6bcb",
+        fillColor: "#0b6bcb",
+        fillOpacity: 0.35,
+        weight: 1,
+      })
+        .bindPopup("clustered points: " + String(bucket.count))
+        .addTo(trackLayer);
+    });
   }
 
   window.PlexploreUI.initThemeToggle();

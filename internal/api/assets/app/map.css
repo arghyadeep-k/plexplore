@@ -23,3 +23,7 @@
 .visits-table td {
   padding: 6px;
 }
+
+#sampling_note {
+  color: var(--warn);
+}

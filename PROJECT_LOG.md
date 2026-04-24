@@ -4125,3 +4125,64 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 17:21 UTC - Phase 85 (Map Performance: Downsampling + Clustering)
+Implemented:
+- Added optional backend point simplification controls on `GET /api/v1/points`:
+- `simplify=true|false`
+- `max_points` target output count
+- when simplification is active, backend downsamples deterministically (keeps route shape endpoints) and returns metadata:
+- `sampled: true`
+- `sampled_from: <original_count>`
+- Added simplify-mode query caps for low-RAM safety:
+- simplified fetch limit defaults to `5000`, hard max `20000`
+- simplified output cap defaults to `1000`, hard max `5000`
+- Maintained cursor pagination behavior with `next_cursor` while simplifying point payload size.
+- Added map UI threshold handling and performance modes in `map.js`:
+- small desired set (`<=2k`): full track mode
+- medium desired set: sampled track + clustered markers
+- large desired set: stronger sampling and marker suppression (polyline retained)
+- Added lightweight client-side grid clustering for markers when point count is moderate.
+- Added explicit map sampling/performance note in UI (`#sampling_note`) when sampling/clustering/suppression is active.
+- Updated UI/map tests to verify:
+- sampling note element exists
+- map script requests `simplify` and `max_points`
+- clustering helper exists in served map script
+- Added API/store tests for:
+- large simplified query reducing result count
+- cursor pagination behavior
+- export and query path compatibility after simplification changes
+
+Architectural decisions:
+- Decision: Combine backend deterministic downsampling with lightweight frontend clustering.
+  Reason: Keeps payload and rendering costs low on Raspberry Pi while preserving a useful route path.
+- Decision: Keep implementation dependency-free (no heavy clustering/simplification library).
+  Reason: Maintain low memory/CPU overhead and operational simplicity.
+
+Files changed:
+- `internal/api/points.go`
+- `internal/api/points_test.go`
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `internal/api/assets/app/map.js`
+- `internal/api/assets/app/map.css`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/points.go internal/api/points_test.go internal/api/exports.go internal/api/ui.go internal/api/ui_test.go internal/store/points.go`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/api -run 'Test(MapPageServedAtUIMap|UIAssets_MapScriptContainsEscapedPopupFields|PointsEndpoint_SimplifyReducesLargeResponse|PointsEndpoint_PaginationCursor)' -count=1`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+- `timeout 6s go run ./cmd/server`
+
+Pending:
+- Optional refinement: tune clustering cell size by zoom/motion for denser city tracks.
+- Keep previously tracked follow-ups: authenticated `/ui/admin/devices` smoke test, dynamic CSP `img-src` tightening, and migration fixture for `0005` partial state.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

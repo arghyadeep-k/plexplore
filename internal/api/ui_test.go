@@ -138,6 +138,9 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if !strings.Contains(body, `id="device_select"`) {
 		t.Fatalf("expected device select in body, got %q", body)
 	}
+	if !strings.Contains(body, `id="sampling_note"`) {
+		t.Fatalf("expected sampling note element in body, got %q", body)
+	}
 	if !strings.Contains(body, `id="date_from"`) || !strings.Contains(body, `id="date_to"`) {
 		t.Fatalf("expected date range inputs in body, got %q", body)
 	}
@@ -281,6 +284,12 @@ func TestUIAssets_MapScriptContainsEscapedPopupFields(t *testing.T) {
 	}
 	if !strings.Contains(body, "/api/v1/visits") || !strings.Contains(body, "/api/v1/points?") {
 		t.Fatalf("expected map js to query points and visits endpoints, got %q", body)
+	}
+	if !strings.Contains(body, `params.set("simplify", simplify ? "true" : "false")`) || !strings.Contains(body, `params.set("max_points"`) {
+		t.Fatalf("expected map js to request simplification controls, got %q", body)
+	}
+	if !strings.Contains(body, "renderClusteredMarkers") {
+		t.Fatalf("expected map js clustering helper, got %q", body)
 	}
 }
 

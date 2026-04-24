@@ -338,6 +338,8 @@ curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=
 - `device_id` (device name)
 - `limit` (default `500`, hard max `1000`)
 - `cursor` (optional `seq` from prior response for pagination)
+- `simplify` (optional bool): enable backend downsampling mode for large map queries
+- `max_points` (optional int): target point count when `simplify=true` (default `1000`, max `5000`)
 
 Response fields:
 - `seq`
@@ -347,6 +349,7 @@ Response fields:
 - `lat`
 - `lon`
 - `next_cursor` (present when there are more rows)
+- `sampled` / `sampled_from` (present when backend downsampling is applied)
 
 Examples:
 
@@ -686,6 +689,11 @@ Map page notes:
 - includes a small visits summary table (start, end, duration, device) below the map
 - supports filtering by device and date range (`from`/`to` day inputs)
 - defaults to a recent 7-day range when no date filters are set
+- performance mode:
+- small requests (`<=2k` desired points): full track
+- medium requests: backend sampling + marker clustering
+- very large requests: stronger sampling and marker suppression (polyline retained)
+- UI shows a sampling/performance note when sampling or clustering is active
 - includes the same dark mode toggle with saved preference behavior
 
 Users page notes:

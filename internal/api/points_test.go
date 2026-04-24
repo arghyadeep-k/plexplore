@@ -173,6 +173,7 @@ func TestPointsEndpoint_InvalidQueryParams(t *testing.T) {
 		"/api/v1/points?to=not-a-time",
 		"/api/v1/points?limit=bad",
 		"/api/v1/points?cursor=bad",
+		"/api/v1/points?simplify=true&max_points=bad",
 	}
 	for _, path := range cases {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -248,6 +249,52 @@ func TestPointsEndpoint_PaginationCursor(t *testing.T) {
 	}
 	if second.NextCursor != nil {
 		t.Fatalf("expected no next cursor on last page, got %+v", second.NextCursor)
+	}
+}
+
+func TestPointsEndpoint_SimplifyReducesLargeResponse(t *testing.T) {
+	points := make([]store.RecentPoint, 0, 3000)
+	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 3000; i++ {
+		points = append(points, store.RecentPoint{
+			Seq:          uint64(i),
+			UserID:       1,
+			DeviceID:     "d1",
+			SourceType:   "owntracks",
+			TimestampUTC: base.Add(time.Duration(i) * time.Second),
+			Lat:          40.0 + float64(i)*0.0001,
+			Lon:          -87.0 - float64(i)*0.0001,
+		})
+	}
+
+	pointStore := &fakePointStore{points: points}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{
+		PointStore:   pointStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"tok": {Token: "tok", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?simplify=true&limit=999999&max_points=200", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp pointsPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal simplify response failed: %v", err)
+	}
+	if len(resp.Points) != 200 {
+		t.Fatalf("expected 200 sampled points, got %d", len(resp.Points))
+	}
+	if !resp.Sampled || resp.SampledFrom == 0 {
+		t.Fatalf("expected sampled metadata, got %+v", resp)
+	}
+	if pointStore.lastLimit != maxSimplifiedPointsLimit+1 {
+		t.Fatalf("expected simplified capped query limit %d, got %d", maxSimplifiedPointsLimit+1, pointStore.lastLimit)
 	}
 }
 

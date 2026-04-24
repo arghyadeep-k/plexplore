@@ -147,6 +147,7 @@ const mapPageHTML = `<!doctype html>
         <button id="load_btn" type="button">Refresh</button>
       </div>
       <div id="meta" class="muted mt-8">Loading...</div>
+      <div id="sampling_note" class="tiny mt-8"></div>
     </div>
     <div class="card">
       <div

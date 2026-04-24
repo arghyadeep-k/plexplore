@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,13 +23,19 @@ type recentPointsResponse struct {
 }
 
 type pointsPageResponse struct {
-	Points     []recentPointResponse `json:"points"`
-	NextCursor *uint64               `json:"next_cursor,omitempty"`
+	Points      []recentPointResponse `json:"points"`
+	NextCursor  *uint64               `json:"next_cursor,omitempty"`
+	Sampled     bool                  `json:"sampled,omitempty"`
+	SampledFrom int                   `json:"sampled_from,omitempty"`
 }
 
 const (
-	defaultPointsLimit = 500
-	maxPointsLimit     = 1000
+	defaultPointsLimit           = 500
+	maxPointsLimit               = 1000
+	defaultSimplifiedPointsLimit = 5000
+	maxSimplifiedPointsLimit     = 20000
+	defaultSimplifiedMaxPoints   = 1000
+	maxSimplifiedMaxPoints       = 5000
 )
 
 func registerPointRoutes(mux *http.ServeMux, deps Dependencies) {
@@ -85,6 +92,20 @@ func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerF
 		if cursor > 0 {
 			filter.AfterSeq = cursor
 		}
+		simplify := parseOptionalBoolParam(r.URL.Query().Get("simplify"))
+		simplifiedMaxPoints := defaultSimplifiedMaxPoints
+		if simplify {
+			simplifiedMaxPoints, err = parseOptionalMaxPointsParam(r, defaultSimplifiedMaxPoints, maxSimplifiedMaxPoints)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			limit, err = parseOptionalLimitParamWithMax(r, defaultSimplifiedPointsLimit, maxSimplifiedPointsLimit)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 
 		points, err := pointStore.ListPoints(r.Context(), filter, limit+1)
 		if err != nil {
@@ -95,6 +116,10 @@ func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerF
 		if hasMore {
 			points = points[:limit]
 		}
+		originalCount := len(points)
+		if simplify {
+			points = downsampleRecentPoints(points, simplifiedMaxPoints)
+		}
 
 		out := make([]recentPointResponse, 0, len(points))
 		for _, point := range points {
@@ -104,6 +129,10 @@ func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerF
 		if hasMore && len(points) > 0 {
 			next := points[len(points)-1].Seq
 			resp.NextCursor = &next
+		}
+		if simplify && originalCount > len(points) {
+			resp.Sampled = true
+			resp.SampledFrom = originalCount
 		}
 		writeJSON(w, http.StatusOK, resp)
 	}
@@ -237,6 +266,32 @@ func parseOptionalCursorParam(r *http.Request) (uint64, error) {
 	return parsed, nil
 }
 
+func parseOptionalBoolParam(raw string) bool {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseOptionalMaxPointsParam(r *http.Request, fallback, maxAllowed int) (int, error) {
+	maxPoints := fallback
+	maxPointsParam := strings.TrimSpace(r.URL.Query().Get("max_points"))
+	if maxPointsParam == "" {
+		return maxPoints, nil
+	}
+	parsed, err := strconv.Atoi(maxPointsParam)
+	if err != nil || parsed <= 0 {
+		return 0, &invalidMaxPointsParamError{value: maxPointsParam}
+	}
+	if parsed > maxAllowed {
+		return maxAllowed, nil
+	}
+	return parsed, nil
+}
+
 type invalidLimitParamError struct {
 	value string
 }
@@ -251,6 +306,38 @@ type invalidCursorParamError struct {
 
 func (e *invalidCursorParamError) Error() string {
 	return "cursor must be a positive integer: " + e.value
+}
+
+type invalidMaxPointsParamError struct {
+	value string
+}
+
+func (e *invalidMaxPointsParamError) Error() string {
+	return "max_points must be a positive integer: " + e.value
+}
+
+func downsampleRecentPoints(points []store.RecentPoint, maxPoints int) []store.RecentPoint {
+	if len(points) <= maxPoints || maxPoints <= 0 {
+		return points
+	}
+	if maxPoints == 1 {
+		return []store.RecentPoint{points[len(points)-1]}
+	}
+	step := float64(len(points)-1) / float64(maxPoints-1)
+	out := make([]store.RecentPoint, 0, maxPoints)
+	prev := -1
+	for i := 0; i < maxPoints; i++ {
+		idx := int(math.Round(float64(i) * step))
+		if idx <= prev {
+			idx = prev + 1
+		}
+		if idx >= len(points) {
+			idx = len(points) - 1
+		}
+		out = append(out, points[idx])
+		prev = idx
+	}
+	return out
 }
 
 func recentPointFromStore(point store.RecentPoint) recentPointResponse {
