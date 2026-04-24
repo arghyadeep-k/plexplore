@@ -79,6 +79,14 @@ type Config struct {
 	MapTileMode        string
 	MapTileURLTemplate string
 	MapTileAttribution string
+
+	// Visit generation scheduler settings.
+	VisitSchedulerEnabled         bool
+	VisitSchedulerInterval        time.Duration
+	VisitSchedulerDeviceBatchSize int
+	VisitSchedulerLookback        time.Duration
+	VisitSchedulerMinDwell        time.Duration
+	VisitSchedulerMaxRadiusMeters float64
 }
 
 func Load() Config {
@@ -123,6 +131,12 @@ func Load() Config {
 		MapTileMode:                        getMapTileMode("APP_MAP_TILE_MODE", "none"),
 		MapTileURLTemplate:                 getEnv("APP_MAP_TILE_URL_TEMPLATE", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
 		MapTileAttribution:                 getEnv("APP_MAP_TILE_ATTRIBUTION", "&copy; OpenStreetMap contributors"),
+		VisitSchedulerEnabled:              getEnvBool("APP_VISIT_SCHEDULER_ENABLED", false),
+		VisitSchedulerInterval:             getEnvDuration("APP_VISIT_SCHEDULER_INTERVAL", 15*time.Minute),
+		VisitSchedulerDeviceBatchSize:      getEnvInt("APP_VISIT_SCHEDULER_DEVICE_BATCH_SIZE", 10),
+		VisitSchedulerLookback:             getEnvDuration("APP_VISIT_SCHEDULER_LOOKBACK", 2*time.Hour),
+		VisitSchedulerMinDwell:             getEnvDuration("APP_VISIT_SCHEDULER_MIN_DWELL", 15*time.Minute),
+		VisitSchedulerMaxRadiusMeters:      getEnvFloat("APP_VISIT_SCHEDULER_MAX_RADIUS_METERS", 35.0),
 	}
 }
 
@@ -175,6 +189,18 @@ func getEnvBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func getFsyncMode(key, fallback string) string {

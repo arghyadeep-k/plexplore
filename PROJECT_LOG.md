@@ -4186,3 +4186,52 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 17:40 UTC - Phase 86 (Scheduled Incremental Visit Generation)
+Implemented:
+- Added lightweight in-process visit scheduler wiring to runtime startup/shutdown:
+- scheduler starts with the service and runs periodic/background visit generation when enabled
+- scheduler is stopped during shutdown before final flusher stop
+- Added incremental watermark persistence for automatic visit generation:
+- migration `0008_visit_generation_state.sql` adds `visit_generation_state`
+- watermark stores per-device `last_processed_seq` and `updated_at`
+- scheduler processes only devices with new points (`max_seq > watermark`)
+- scheduler applies configurable lookback overlap for visit-boundary safety
+- scheduler skips overlapping concurrent runs
+- manual trigger via `POST /api/v1/visits/generate` remains unchanged
+- Added focused scheduler tests:
+- background scheduler trigger path
+- incremental behavior across repeated runs
+- overlap prevention for concurrent runs
+- Updated README with scheduler behavior and config knobs.
+
+Architectural decisions:
+- Decision: Implement visit automation as an optional in-process scheduler with persisted per-device watermark.
+  Reason: Keeps CPU/RAM overhead low, preserves single-process operation, and avoids external scheduler dependencies.
+- Decision: Keep manual visit generation endpoint active alongside scheduler.
+  Reason: Preserves explicit operator control and bounded ad-hoc recomputation workflows.
+
+Files changed:
+- `cmd/server/main.go`
+- `internal/tasks/visit_scheduler_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w cmd/server/main.go internal/tasks/visit_scheduler_test.go`
+- `go test ./internal/tasks -run TestVisitScheduler -count=1`
+- `go test ./cmd/server -count=1`
+- `go test ./internal/api -run 'TestGenerateVisitsEndpoint_' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(ListVisits|VisitDetection_)' -count=1`
+- `go test ./...`
+- `timeout 6s go run ./cmd/server`
+
+Pending:
+- Add scheduler status fields to authenticated `/api/v1/status` (last run/result) for easier operations visibility.
+- Add store-level integration coverage asserting persisted watermark behavior against SQLite (not only fake-store scheduler tests).
+- Evaluate device-identifier uniqueness assumptions in visit rebuild paths to avoid ambiguity when multiple users have the same device name.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

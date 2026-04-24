@@ -1,15 +1,16 @@
 # Next Steps
 
 ## Current milestone
-Map performance hardening complete (backend simplification + frontend clustering/sampling notes)
+Scheduled incremental visit generation integrated (optional background scheduler with persisted watermark)
 
 ## Next 3 tasks
-1. Add authenticated browser smoke test coverage for `/login` -> `/ui/admin/devices` and validate create/rotate/generate actions with CSRF flow
-2. Tighten CSP `img-src` dynamically by tile mode (for example strict `'self' data:` in `APP_MAP_TILE_MODE=none`)
-3. Add a regression migration fixture for `0005_users_auth_fields.sql` partial-state recovery (columns present, migration row missing)
+1. Add authenticated status visibility for visit scheduler (last run time/result, last error) under protected `/api/v1/status`
+2. Add SQLite-backed integration test for persisted `visit_generation_state` progression across restart
+3. Add authenticated browser smoke test for `/login` -> `/ui/admin/devices` and validate create/rotate/generate CSRF flow
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/tasks -run TestVisitScheduler -count=1`
 - `go test ./internal/api`
 - `go test ./internal/store`
 - `gofmt -w internal/api/*.go internal/tasks/*.go cmd/migrate/*.go`

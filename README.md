@@ -405,6 +405,16 @@ Visit generation workflow:
 - optional tuning params:
 - `min_dwell` (duration, default `15m`)
 - `max_radius_m` (meters, default `35`)
+- manual trigger remains available even when scheduler is enabled
+
+Scheduled incremental generation (optional):
+- disabled by default
+- when enabled, runs periodically in-process and only processes devices with
+  new points since the device watermark
+- watermark is stored in `visit_generation_state.last_processed_seq` per device
+- each incremental run applies a small configurable lookback overlap to avoid
+  edge misses around visit boundaries
+- overlap is prevented (`RunOnce` skips while another run is active)
 
 Examples:
 
@@ -1057,6 +1067,12 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_MAP_TILE_MODE` (default: `none`): map tile mode (`none`, `osm`, `custom`).
 - `APP_MAP_TILE_URL_TEMPLATE` (default: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`): tile URL template used for `osm`/`custom` mode.
 - `APP_MAP_TILE_ATTRIBUTION` (default: `&copy; OpenStreetMap contributors`): tile attribution text for `osm`/`custom` mode.
+- `APP_VISIT_SCHEDULER_ENABLED` (default: `false`): enable periodic automatic visit generation.
+- `APP_VISIT_SCHEDULER_INTERVAL` (default: `15m`): scheduler run interval.
+- `APP_VISIT_SCHEDULER_DEVICE_BATCH_SIZE` (default: `10`): max devices processed per run.
+- `APP_VISIT_SCHEDULER_LOOKBACK` (default: `2h`): overlap window applied from the last processed point timestamp.
+- `APP_VISIT_SCHEDULER_MIN_DWELL` (default: `15m`): dwell threshold used by scheduled generation.
+- `APP_VISIT_SCHEDULER_MAX_RADIUS_METERS` (default: `35`): visit radius threshold used by scheduled generation.
 
 Flush trigger policy:
 - periodic flush loop remains active (`APP_FLUSH_INTERVAL`).

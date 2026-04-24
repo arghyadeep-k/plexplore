@@ -65,6 +65,16 @@ func main() {
 		FlushInterval:  cfg.FlushInterval,
 		FlushBatchSize: cfg.FlushBatchSize,
 	})
+	visitScheduler := tasks.NewVisitScheduler(sqliteStore, tasks.VisitSchedulerConfig{
+		Enabled:         cfg.VisitSchedulerEnabled,
+		Interval:        cfg.VisitSchedulerInterval,
+		DeviceBatchSize: cfg.VisitSchedulerDeviceBatchSize,
+		Lookback:        cfg.VisitSchedulerLookback,
+		DetectConfig: visits.Config{
+			MinDwell:        cfg.VisitSchedulerMinDwell,
+			MaxRadiusMeters: cfg.VisitSchedulerMaxRadiusMeters,
+		},
+	})
 
 	recoveryResult, err := tasks.RecoverFromSpool(
 		spoolManager,
@@ -83,6 +93,7 @@ func main() {
 	)
 
 	batchFlusher.Start()
+	visitScheduler.Start(context.Background())
 	var draining atomic.Bool
 	visitLabelResolver, err := visits.NewLabelResolver(visits.ReverseGeocodeConfig{
 		Enabled:              cfg.ReverseGeocodeEnabled,
@@ -161,6 +172,10 @@ func main() {
 	if err := server.Shutdown(serverCtx); err != nil {
 		log.Printf("graceful shutdown failed: %v", err)
 	}
+
+	visitStopCtx, cancelVisitStop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelVisitStop()
+	visitScheduler.Stop(visitStopCtx)
 
 	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFlush()
