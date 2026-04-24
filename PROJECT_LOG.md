@@ -3772,6 +3772,49 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 15:48 UTC - Phase 81 (Production-Hardening Follow-up Verification)
+Implemented:
+- Re-validated the three follow-ups against current codebase state:
+- CSP hardening remains in effect (`script-src 'self'`, `style-src 'self'`, no `'unsafe-inline'`)
+- migration robustness remains in effect (transactional apply+record flow, sqlite `-bail`, partial-state recovery tests)
+- map tile privacy behavior remains in effect (default `APP_MAP_TILE_MODE=none`, custom/osm explicit configuration paths)
+- Re-ran full and targeted validations, including runtime header checks and migration rerun checks.
+- Updated `NEXT_STEPS.md` note to remove outdated statement that CSP still allows `'unsafe-inline'`.
+
+Architectural decisions:
+- Decision: No new architecture/code changes were required for these follow-ups after verification.
+  Reason: Existing implementation already satisfied requested hardening requirements; only tracking docs required correction.
+
+Files changed:
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `rg -n "unsafe-inline" internal README.md`
+- `rg -n "<style>|<script>" internal/api/ui.go internal/api/login.go`
+- `rg -n "APP_MAP_TILE_MODE|data-tile-mode|tile.openstreetmap.org" internal/api internal/config README.md Dockerfile compose.yaml deploy/systemd/plexplore.env.sample`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+- `gofmt -w internal/api/*.go internal/store/*.go internal/config/*.go cmd/server/*.go`
+- `go run ./cmd/server`
+- `curl -I http://127.0.0.1:8080/`
+- `curl -I http://127.0.0.1:8080/login`
+- `curl -I http://127.0.0.1:8080/ui/map`
+- `go test ./internal/api -run 'TestMapPageServedAtUIMap|TestMapPage_UsesConfiguredExternalTileProvider|TestUIAssets_MapScriptContainsEscapedPopupFields' -count=1`
+- `make migrate`
+- `make migrate`
+
+Pending:
+- Add authenticated browser smoke test coverage for `/login` -> `/ui/map`.
+- Consider dynamic CSP `img-src` tightening when `APP_MAP_TILE_MODE=none`.
+- Add explicit fixture for partial-apply recovery of `0005_users_auth_fields.sql` with missing migration record.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 08:42 UTC - Phase 80 (CSP Tightening, Migration Robustness, Tile Privacy Config)
 Implemented:
 - Removed inline UI CSS/JS from login/status/map/users pages and moved behavior/styling to local static assets under `/ui/assets/app/*`.

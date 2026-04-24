@@ -114,7 +114,7 @@ Tune behavior through env config (segment size, fsync mode/interval/threshold, b
 Run `make migrate` before server run against a fresh database to ensure required tables exist.
 .gitignore baseline is now present; runtime state (`data/`) and `node_modules/` are ignored to avoid accidental commits.
 Leaflet map assets are now self-hosted under `/ui/assets/leaflet/*`; CDN references were removed from map UI.
-Baseline browser security headers are now applied, with CSP currently allowing `'unsafe-inline'` on HTML pages to preserve existing inline UI scripts/styles.
+Baseline browser security headers are now applied, and CSP on HTML pages no longer allows `'unsafe-inline'`; UI CSS/JS are served from local static assets.
 Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
 Shared protected route helpers now panic on missing required auth deps to enforce fail-closed registration in future entrypoints.
 Route helper fallback audit re-verified: no remaining permissive runtime helper branches were found.
