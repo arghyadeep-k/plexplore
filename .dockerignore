@@ -1,0 +1,10 @@
+.git
+.codex
+data
+node_modules
+*.log
+*.tmp
+plexplore-server
+plexplore-migrate
+PROJECT_LOG.md
+NEXT_STEPS.md

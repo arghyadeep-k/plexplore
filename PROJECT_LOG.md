@@ -3092,3 +3092,65 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 02:54 UTC - Phase 73 (Cookie/Proxy TLS Hardening)
+Implemented:
+- Added explicit cookie/proxy security config knobs in runtime config:
+- `APP_COOKIE_SECURE_MODE` (`auto|always|never`)
+- `APP_TRUST_PROXY_HEADERS` (`true|false`)
+- `APP_EXPECT_TLS_TERMINATION` (`true|false`)
+- Added lightweight request-aware cookie security policy used by both session and CSRF cookie issuance.
+- Updated cookie setting behavior:
+- login session cookie now sets `Secure` according to policy
+- logout cookie-clear response now preserves policy-driven `Secure`
+- CSRF cookie issuance now sets `Secure` according to policy
+- trusted `X-Forwarded-Proto=https` affects cookie `Secure` only when proxy trust is explicitly enabled.
+- Added startup deployment warnings for risky combinations:
+- public bind with non-`always` cookie mode
+- TLS termination expected but proxy headers not trusted
+- explicit `APP_COOKIE_SECURE_MODE=never`
+- Updated deployment/config docs and samples:
+- README security/deployment guidance for local HTTP dev vs direct HTTPS vs reverse-proxy TLS
+- `compose.yaml` includes explicit cookie/proxy env knobs
+- `deploy/systemd/plexplore.env.sample` includes cookie/proxy env knobs and usage notes
+- Added/updated tests for cookie security behavior:
+- local HTTP default path keeps non-secure cookies for dev flow
+- `always` mode enforces `Secure` session cookie
+- trusted proxy header path sets `Secure` CSRF cookie
+- untrusted proxy headers do not affect `Secure` cookie behavior
+- direct TLS and mode semantics covered by policy unit tests
+- Verified full test suite passes after changes.
+
+Architectural decisions:
+- Decision: Centralize cookie `Secure` decision in a small policy object (`CookieSecurityPolicy`) and inject it via API dependencies.
+  Reason: Keep auth handlers thin and consistent while supporting local HTTP, direct HTTPS, and explicitly trusted reverse-proxy TLS deployments without redesigning auth/session architecture.
+
+Files changed:
+- `internal/config/config.go`
+- `internal/api/cookie_security.go`
+- `internal/api/cookie_security_test.go`
+- `internal/api/csrf.go`
+- `internal/api/health.go`
+- `internal/api/login.go`
+- `internal/api/login_test.go`
+- `internal/api/ui.go`
+- `cmd/server/main.go`
+- `README.md`
+- `compose.yaml`
+- `deploy/systemd/plexplore.env.sample`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/config/config.go internal/api/health.go internal/api/cookie_security.go internal/api/csrf.go internal/api/login.go internal/api/ui.go internal/api/login_test.go internal/api/cookie_security_test.go cmd/server/main.go`
+- `go test ./internal/api -run 'Test(Login|CookieSecurityPolicy|LoadCurrentUserFromSession|RequireUserSessionAuth)' -count=1`
+- `go test ./cmd/server -count=1`
+- `go test ./...`
+
+Pending:
+- Manual end-to-end validation behind an actual HTTPS reverse proxy (for example Caddy/Nginx) to confirm browser cookie behavior in deployed topology.
+- Decide and set production baseline env values for cookie mode/trusted proxy in each deployment manifest.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

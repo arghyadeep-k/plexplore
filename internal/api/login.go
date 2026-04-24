@@ -93,17 +93,19 @@ const loginPageHTML = `<!doctype html>
 </html>
 `
 
-func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore) {
-	mux.HandleFunc("GET /login", loginPageHandler)
-	mux.HandleFunc("POST /login", loginHandler(userStore, sessionStore))
-	mux.HandleFunc("POST /logout", logoutHandler(sessionStore))
+func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy) {
+	mux.HandleFunc("GET /login", loginPageHandler(cookiePolicy))
+	mux.HandleFunc("POST /login", loginHandler(userStore, sessionStore, cookiePolicy))
+	mux.HandleFunc("POST /logout", logoutHandler(sessionStore, cookiePolicy))
 }
 
-func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	writeLoginPage(w, r, http.StatusOK, "", "", strings.TrimSpace(r.URL.Query().Get("next")))
+func loginPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeLoginPage(w, r, http.StatusOK, "", "", strings.TrimSpace(r.URL.Query().Get("next")), cookiePolicy)
+	}
 }
 
-func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFunc {
+func loginHandler(userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		jsonRequest := isJSONLoginRequest(r)
 		if !validateCSRF(r) {
@@ -111,7 +113,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusForbidden, "csrf token invalid")
 				return
 			}
-			writeLoginPage(w, r, http.StatusForbidden, "", "Session expired. Please try again.", strings.TrimSpace(r.FormValue("next")))
+			writeLoginPage(w, r, http.StatusForbidden, "", "Session expired. Please try again.", strings.TrimSpace(r.FormValue("next")), cookiePolicy)
 			return
 		}
 
@@ -121,7 +123,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusBadRequest, "invalid login form")
 				return
 			}
-			writeLoginPage(w, r, http.StatusBadRequest, "", "Invalid login request.", strings.TrimSpace(r.URL.Query().Get("next")))
+			writeLoginPage(w, r, http.StatusBadRequest, "", "Invalid login request.", strings.TrimSpace(r.URL.Query().Get("next")), cookiePolicy)
 			return
 		}
 		if email == "" || password == "" {
@@ -129,7 +131,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusBadRequest, "email and password are required")
 				return
 			}
-			writeLoginPage(w, r, http.StatusBadRequest, email, "Email and password are required.", nextPath)
+			writeLoginPage(w, r, http.StatusBadRequest, email, "Email and password are required.", nextPath, cookiePolicy)
 			return
 		}
 
@@ -140,14 +142,14 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 					writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
 					return
 				}
-				writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath)
+				writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath, cookiePolicy)
 				return
 			}
 			if jsonRequest {
 				writeJSONError(w, http.StatusInternalServerError, "user lookup failed")
 				return
 			}
-			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath)
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath, cookiePolicy)
 			return
 		}
 		if !VerifyPassword(user.PasswordHash, password) {
@@ -155,7 +157,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
 				return
 			}
-			writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath)
+			writeLoginPage(w, r, http.StatusUnauthorized, email, "Invalid email or password", nextPath, cookiePolicy)
 			return
 		}
 
@@ -165,7 +167,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 				writeJSONError(w, http.StatusInternalServerError, "session creation failed")
 				return
 			}
-			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath)
+			writeLoginPage(w, r, http.StatusInternalServerError, email, "Login failed. Please try again.", nextPath, cookiePolicy)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -173,6 +175,7 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 			Value:    session.Token,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   cookiePolicy.CookieSecure(r),
 			SameSite: http.SameSiteLaxMode,
 			Expires:  session.ExpiresAt.UTC(),
 		})
@@ -180,8 +183,8 @@ func loginHandler(userStore UserStore, sessionStore SessionStore) http.HandlerFu
 	}
 }
 
-func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, errorMessage, nextPath string) {
-	csrfToken := ensureCSRFCookie(w, r)
+func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, errorMessage, nextPath string, cookiePolicy CookieSecurityPolicy) {
+	csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
 	errorBlock := ""
 	if strings.TrimSpace(errorMessage) != "" {
 		errorBlock = `<p class="error" role="alert">` + html.EscapeString(errorMessage) + `</p>`
@@ -233,7 +236,7 @@ func resolvePostLoginRedirect(nextPath string) string {
 	return candidate
 }
 
-func logoutHandler(sessionStore SessionStore) http.HandlerFunc {
+func logoutHandler(sessionStore SessionStore, cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid logout form")
@@ -251,6 +254,7 @@ func logoutHandler(sessionStore SessionStore) http.HandlerFunc {
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   cookiePolicy.CookieSecure(r),
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 		})

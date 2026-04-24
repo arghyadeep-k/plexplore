@@ -548,14 +548,26 @@ Users page notes:
 
 - Session cookie:
 - name: `plexplore_session`
-- attributes: `HttpOnly`, `SameSite=Lax`, path `/`, server-side expiration
+- attributes: `HttpOnly`, `SameSite=Lax`, path `/`, server-side expiration, `Secure` based on cookie security mode and request/proxy context
 - CSRF cookie:
 - name: `plexplore_csrf`
-- attributes: `SameSite=Lax`, path `/` (readable by UI JS for lightweight fetch protection)
+- attributes: `SameSite=Lax`, path `/`, `Secure` based on cookie security mode and request/proxy context (readable by UI JS for lightweight fetch protection)
 - CSRF validation is enforced on:
 - `POST /login`
 - `POST /logout`
 - `POST /api/v1/users`
+
+Cookie/proxy knobs:
+- `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto`)
+- `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
+- `APP_EXPECT_TLS_TERMINATION=true|false` (default `false`, startup warning aid)
+
+Secure-cookie behavior:
+- Local HTTP dev: use `APP_COOKIE_SECURE_MODE=never` (or `auto` on plain HTTP, which also yields non-Secure cookies).
+- Direct HTTPS: use `APP_COOKIE_SECURE_MODE=auto` (or `always`) so cookies are marked `Secure`.
+- Reverse proxy TLS termination: keep `APP_COOKIE_SECURE_MODE=auto` and set `APP_TRUST_PROXY_HEADERS=true` so trusted `X-Forwarded-Proto=https` results in `Secure` cookies.
+
+The service logs a startup warning for risky combinations (for example public bind with non-`always` cookie mode, or expected TLS termination without trusted proxy headers).
 
 ## Raspberry Pi Deployment (systemd)
 
@@ -648,6 +660,9 @@ Environment variables commonly used in containers:
 - `APP_FLUSH_BATCH_SIZE`
 - `APP_FLUSH_TRIGGER_POINTS`
 - `APP_FLUSH_TRIGGER_BYTES`
+- `APP_COOKIE_SECURE_MODE`
+- `APP_TRUST_PROXY_HEADERS`
+- `APP_EXPECT_TLS_TERMINATION`
 - `APP_SPOOL_FSYNC_MODE`
 - `APP_SPOOL_FSYNC_INTERVAL`
 - `APP_SPOOL_FSYNC_BYTE_THRESHOLD`
@@ -674,6 +689,9 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_FLUSH_BATCH_SIZE` (default: `128`): max points per flush batch.
 - `APP_FLUSH_TRIGGER_POINTS` (default: `75%` of `APP_BUFFER_MAX_POINTS`): best-effort ingest-path flush trigger when buffered points reaches threshold.
 - `APP_FLUSH_TRIGGER_BYTES` (default: `75%` of `APP_BUFFER_MAX_BYTES`): best-effort ingest-path flush trigger when buffered bytes reaches threshold.
+- `APP_COOKIE_SECURE_MODE` (default: `auto`): cookie `Secure` policy (`auto`, `always`, `never`).
+- `APP_TRUST_PROXY_HEADERS` (default: `false`): allow trusted `X-Forwarded-Proto` to influence cookie `Secure` behavior.
+- `APP_EXPECT_TLS_TERMINATION` (default: `false`): deployment hint used for startup warnings when proxy/TLS settings look inconsistent.
 - `APP_READ_TIMEOUT_SECONDS` (default: `5`): HTTP read timeout in seconds.
 - `APP_WRITE_TIMEOUT_SECONDS` (default: `10`): HTTP write timeout in seconds.
 - `APP_IDLE_TIMEOUT_SECONDS` (default: `30`): HTTP idle timeout in seconds.

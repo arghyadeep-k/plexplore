@@ -1,15 +1,17 @@
 # Next Steps
 
 ## Current milestone
-Multi-user authentication milestone complete (Tasks 1-18 complete)
+Cookie/proxy TLS hardening complete for session + CSRF cookies (post-auth security pass)
 
 ## Next 3 tasks
-1. Run end-to-end manual checklist on target Raspberry Pi deployment
-2. Monitor logs for session/CSRF validation failures and login UX errors in real traffic
-3. Define the next feature milestone beyond auth hardening
+1. Run manual HTTPS reverse-proxy validation (trusted vs untrusted forwarded proto) on target Raspberry Pi deployment
+2. Set production env defaults per deployment target (`APP_COOKIE_SECURE_MODE`, `APP_TRUST_PROXY_HEADERS`, `APP_EXPECT_TLS_TERMINATION`)
+3. Monitor startup warnings and auth logs after rollout, then define the next milestone
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'Test(Login|CookieSecurityPolicy|LoadCurrentUserFromSession|RequireUserSessionAuth)' -count=1`
+- `go test ./cmd/server -count=1`
 - `go test ./internal/flusher`
 - `go test ./internal/tasks -run 'TestIntegration_Duplicate' -count=1`
 - `go test ./internal/api`
@@ -142,6 +144,15 @@ README now includes practical OwnTracks/Overland setup and troubleshooting for `
 Minimal web UI now also shows recent points preview from `/api/v1/points/recent?limit=10`.
 Raspberry Pi deployment templates now exist under `deploy/systemd/` with installer `scripts/install_systemd.sh`.
 Docker setup now exists with `Dockerfile`, `.dockerignore`, `compose.yaml`, and `scripts/docker-entrypoint.sh` (runs migrate then server).
+Cookie/proxy TLS hardening adds:
+- `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto`)
+- `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
+- `APP_EXPECT_TLS_TERMINATION=true|false` (default `false`)
+Cookie `Secure` behavior now:
+- direct TLS (`r.TLS`) => `Secure` in `auto`
+- trusted `X-Forwarded-Proto=https` => `Secure` only when `APP_TRUST_PROXY_HEADERS=true`
+- local HTTP dev can use `APP_COOKIE_SECURE_MODE=never` (or `auto` without TLS)
+Startup logs now warn for risky cookie/proxy/public-bind combinations.
 Task sequence in `codex_tasks.md` is complete through Task 7.
 Current active sequence is the newer 18-task multi-user auth plan in `codex_tasks.md`; continue strictly in order from Task 2.
 Continue strictly in order from Task 3 next.

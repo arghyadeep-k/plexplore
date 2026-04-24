@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -23,6 +25,7 @@ import (
 
 func main() {
 	cfg := config.Load()
+	logCookieSecurityWarnings(cfg)
 
 	if err := os.MkdirAll(filepath.Dir(cfg.SQLitePath), 0o755); err != nil {
 		log.Fatalf("create sqlite directory: %v", err)
@@ -102,8 +105,12 @@ func main() {
 		VisitLabelResolver: visitLabelResolver,
 		UserStore:          sqliteStore,
 		SessionStore:       sqliteStore,
-		SpoolDir:           cfg.SpoolDir,
-		SQLitePath:         cfg.SQLitePath,
+		CookieSecurity: api.CookieSecurityPolicy{
+			SecureMode:        cfg.CookieSecureMode,
+			TrustProxyHeaders: cfg.TrustProxyHeaders,
+		},
+		SpoolDir:   cfg.SpoolDir,
+		SQLitePath: cfg.SQLitePath,
 		IsDraining: func() bool {
 			return draining.Load()
 		},
@@ -142,4 +149,30 @@ func main() {
 	if err := batchFlusher.Stop(flushCtx); err != nil {
 		log.Printf("flusher stop failed: %v", err)
 	}
+}
+
+func logCookieSecurityWarnings(cfg config.Config) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.CookieSecureMode))
+	publicBind := isPublicBind(cfg.HTTPListenAddr)
+	if publicBind && mode != "always" {
+		log.Printf("warning: HTTP bind is public (%s) and APP_COOKIE_SECURE_MODE=%s; cookies may travel over plain HTTP unless TLS is correctly configured", cfg.HTTPListenAddr, mode)
+	}
+	if cfg.ExpectTLSTermination && !cfg.TrustProxyHeaders {
+		log.Printf("warning: APP_EXPECT_TLS_TERMINATION=true but APP_TRUST_PROXY_HEADERS=false; proxied HTTPS requests may not receive Secure cookies")
+	}
+	if mode == "never" {
+		log.Printf("warning: APP_COOKIE_SECURE_MODE=never disables Secure cookies; use only for local HTTP development")
+	}
+}
+
+func isPublicBind(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return true
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return true
+	}
+	return false
 }

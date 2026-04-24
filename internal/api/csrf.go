@@ -9,7 +9,7 @@ import (
 
 const csrfCookieName = "plexplore_csrf"
 
-func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) string {
+func ensureCSRFCookie(w http.ResponseWriter, r *http.Request, cookiePolicy CookieSecurityPolicy) string {
 	if cookie, err := r.Cookie(csrfCookieName); err == nil {
 		token := strings.TrimSpace(cookie.Value)
 		if token != "" {
@@ -27,6 +27,7 @@ func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) string {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false,
+		Secure:   cookiePolicy.CookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	return token

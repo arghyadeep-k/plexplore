@@ -37,6 +37,13 @@ type Config struct {
 	// FlushTriggerBytes triggers a best-effort flush when buffered bytes
 	// reaches or exceeds this threshold.
 	FlushTriggerBytes int
+	// CookieSecureMode controls Secure cookie behavior.
+	// Allowed values: auto, always, never.
+	CookieSecureMode string
+	// TrustProxyHeaders enables trusted X-Forwarded-Proto handling.
+	TrustProxyHeaders bool
+	// ExpectTLSTermination indicates deployment expects TLS at a reverse proxy.
+	ExpectTLSTermination bool
 
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
@@ -57,25 +64,28 @@ func Load() Config {
 	bufferMaxBytes := getEnvInt("APP_BUFFER_MAX_BYTES", 256*1024)
 
 	return Config{
-		HTTPListenAddr:          getEnv("APP_HTTP_LISTEN_ADDR", "0.0.0.0:8080"),
-		SQLitePath:              getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
-		SpoolDir:                getEnv("APP_SPOOL_DIR", "./data/spool"),
-		SpoolSegmentMaxBytes:    getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
-		SpoolFSyncMode:          getFsyncMode("APP_SPOOL_FSYNC_MODE", "balanced"),
-		SpoolFSyncInterval:      getEnvDuration("APP_SPOOL_FSYNC_INTERVAL", 2*time.Second),
-		SpoolFSyncByteThreshold: getEnvInt("APP_SPOOL_FSYNC_BYTE_THRESHOLD", 64*1024),
-		BufferMaxPoints:         bufferMaxPoints,
-		BufferMaxBytes:          bufferMaxBytes,
-		FlushInterval:           getEnvDuration("APP_FLUSH_INTERVAL", 10*time.Second),
-		FlushBatchSize:          getEnvInt("APP_FLUSH_BATCH_SIZE", 128),
-		FlushTriggerPoints:      getEnvInt("APP_FLUSH_TRIGGER_POINTS", defaultFlushTriggerThreshold(bufferMaxPoints)),
-		FlushTriggerBytes:       getEnvInt("APP_FLUSH_TRIGGER_BYTES", defaultFlushTriggerThreshold(bufferMaxBytes)),
-		ReadTimeout:             time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
-		WriteTimeout:            time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
-		IdleTimeout:             time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,
-		ReverseGeocodeEnabled:   getEnvBool("APP_REVERSE_GEOCODE_ENABLED", false),
-		ReverseGeocodeProvider:  strings.ToLower(getEnv("APP_REVERSE_GEOCODE_PROVIDER", "nominatim")),
-		ReverseGeocodeNominatimURL: getEnv("APP_REVERSE_GEOCODE_NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"),
+		HTTPListenAddr:                     getEnv("APP_HTTP_LISTEN_ADDR", "0.0.0.0:8080"),
+		SQLitePath:                         getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
+		SpoolDir:                           getEnv("APP_SPOOL_DIR", "./data/spool"),
+		SpoolSegmentMaxBytes:               getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
+		SpoolFSyncMode:                     getFsyncMode("APP_SPOOL_FSYNC_MODE", "balanced"),
+		SpoolFSyncInterval:                 getEnvDuration("APP_SPOOL_FSYNC_INTERVAL", 2*time.Second),
+		SpoolFSyncByteThreshold:            getEnvInt("APP_SPOOL_FSYNC_BYTE_THRESHOLD", 64*1024),
+		BufferMaxPoints:                    bufferMaxPoints,
+		BufferMaxBytes:                     bufferMaxBytes,
+		FlushInterval:                      getEnvDuration("APP_FLUSH_INTERVAL", 10*time.Second),
+		FlushBatchSize:                     getEnvInt("APP_FLUSH_BATCH_SIZE", 128),
+		FlushTriggerPoints:                 getEnvInt("APP_FLUSH_TRIGGER_POINTS", defaultFlushTriggerThreshold(bufferMaxPoints)),
+		FlushTriggerBytes:                  getEnvInt("APP_FLUSH_TRIGGER_BYTES", defaultFlushTriggerThreshold(bufferMaxBytes)),
+		CookieSecureMode:                   getCookieSecureMode("APP_COOKIE_SECURE_MODE", "auto"),
+		TrustProxyHeaders:                  getEnvBool("APP_TRUST_PROXY_HEADERS", false),
+		ExpectTLSTermination:               getEnvBool("APP_EXPECT_TLS_TERMINATION", false),
+		ReadTimeout:                        time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
+		WriteTimeout:                       time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
+		IdleTimeout:                        time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,
+		ReverseGeocodeEnabled:              getEnvBool("APP_REVERSE_GEOCODE_ENABLED", false),
+		ReverseGeocodeProvider:             strings.ToLower(getEnv("APP_REVERSE_GEOCODE_PROVIDER", "nominatim")),
+		ReverseGeocodeNominatimURL:         getEnv("APP_REVERSE_GEOCODE_NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"),
 		ReverseGeocodeUserAgent:            getEnv("APP_REVERSE_GEOCODE_USER_AGENT", "plexplore/1.0 (+self-hosted)"),
 		ReverseGeocodeTimeout:              getEnvDuration("APP_REVERSE_GEOCODE_TIMEOUT", 2*time.Second),
 		ReverseGeocodeCacheDecimals:        getEnvInt("APP_REVERSE_GEOCODE_CACHE_DECIMALS", 4),
@@ -153,4 +163,17 @@ func defaultFlushTriggerThreshold(maxValue int) int {
 		return 1
 	}
 	return threshold
+}
+
+func getCookieSecureMode(key, fallback string) string {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if mode == "" {
+		return fallback
+	}
+	switch mode {
+	case "auto", "always", "never":
+		return mode
+	default:
+		return fallback
+	}
 }

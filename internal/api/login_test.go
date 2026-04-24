@@ -133,8 +133,118 @@ func TestLoginSuccessSetsSessionCookie(t *testing.T) {
 		t.Fatalf("expected one created session, got %d", len(sessionStore.created))
 	}
 	cookies := rec.Result().Cookies()
-	if len(cookies) == 0 || cookies[0].Name != sessionCookieName || cookies[0].Value == "" {
+	sessionCookie := cookieByName(cookies, sessionCookieName)
+	if sessionCookie == nil || sessionCookie.Value == "" {
 		t.Fatalf("expected session cookie, got %+v", cookies)
+	}
+	if sessionCookie.Secure {
+		t.Fatalf("expected non-secure session cookie for default local HTTP path")
+	}
+}
+
+func TestLoginSuccess_SetsSecureSessionCookie_WhenAlwaysMode(t *testing.T) {
+	hash, err := HashPassword("test-pass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+
+	userStore := &fakeAuthUserStore{
+		byEmail: map[string]store.User{
+			"admin@example.com": {
+				ID:           7,
+				Email:        "admin@example.com",
+				PasswordHash: hash,
+			},
+		},
+	}
+	sessionStore := &fakeAuthSessionStore{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+		CookieSecurity: CookieSecurityPolicy{
+			SecureMode: cookieSecureAlways,
+		},
+	})
+
+	csrfToken, csrfCookie := fetchLoginCSRF(t, mux)
+
+	form := url.Values{}
+	form.Set("email", "admin@example.com")
+	form.Set("password", "test-pass")
+	form.Set("csrf_token", csrfToken)
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(csrfCookie)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	sessionCookie := cookieByName(rec.Result().Cookies(), sessionCookieName)
+	if sessionCookie == nil {
+		t.Fatalf("expected session cookie to be set")
+	}
+	if !sessionCookie.Secure {
+		t.Fatalf("expected secure session cookie in always mode")
+	}
+}
+
+func TestLoginPageCSRFCookie_UsesTrustedForwardedProtoWhenEnabled(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    &fakeAuthUserStore{},
+		SessionStore: &fakeAuthSessionStore{},
+		CookieSecurity: CookieSecurityPolicy{
+			SecureMode:        cookieSecureAuto,
+			TrustProxyHeaders: true,
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	csrfCookie := cookieByName(rec.Result().Cookies(), csrfCookieName)
+	if csrfCookie == nil {
+		t.Fatalf("expected csrf cookie")
+	}
+	if !csrfCookie.Secure {
+		t.Fatalf("expected secure csrf cookie when trusted forwarded proto is https")
+	}
+}
+
+func TestLoginPageCSRFCookie_IgnoresForwardedProtoWhenUntrusted(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    &fakeAuthUserStore{},
+		SessionStore: &fakeAuthSessionStore{},
+		CookieSecurity: CookieSecurityPolicy{
+			SecureMode:        cookieSecureAuto,
+			TrustProxyHeaders: false,
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	csrfCookie := cookieByName(rec.Result().Cookies(), csrfCookieName)
+	if csrfCookie == nil {
+		t.Fatalf("expected csrf cookie")
+	}
+	if csrfCookie.Secure {
+		t.Fatalf("expected non-secure csrf cookie when proxy headers are untrusted")
 	}
 }
 
@@ -378,4 +488,13 @@ func fetchLoginCSRFAtPath(t *testing.T, mux *http.ServeMux, path string) (string
 		t.Fatalf("expected csrf token field in login page body, got %q", getRec.Body.String())
 	}
 	return matches[1], csrfCookie
+}
+
+func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }

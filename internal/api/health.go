@@ -86,6 +86,7 @@ type Dependencies struct {
 	VisitLabelResolver VisitLabelResolver
 	UserStore          UserStore
 	SessionStore       SessionStore
+	CookieSecurity     CookieSecurityPolicy
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
@@ -115,7 +116,7 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 		registerVisitRoutes(mux, deps)
 	}
 	if deps.UserStore != nil && deps.SessionStore != nil {
-		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore)
+		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity)
 		registerUserRoutes(mux, deps.UserStore, deps.SessionStore)
 	}
 }

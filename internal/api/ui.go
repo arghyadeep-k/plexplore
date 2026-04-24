@@ -1111,35 +1111,41 @@ func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
 				RequireUserSessionAuthHTML(http.HandlerFunc(handler)),
 			)
 		}
-		mux.Handle("GET /{$}", protectedHTML(statusPageHandler))
-		mux.Handle("GET /ui/status", protectedHTML(statusPageHandler))
-		mux.Handle("GET /ui/map", protectedHTML(mapPageHandler))
-		mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler)))
+		mux.Handle("GET /{$}", protectedHTML(statusPageHandler(deps.CookieSecurity)))
+		mux.Handle("GET /ui/status", protectedHTML(statusPageHandler(deps.CookieSecurity)))
+		mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity)))
+		mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler(deps.CookieSecurity))))
 		return
 	}
 
-	mux.HandleFunc("GET /{$}", statusPageHandler)
-	mux.HandleFunc("GET /ui/status", statusPageHandler)
-	mux.HandleFunc("GET /ui/map", mapPageHandler)
-	mux.HandleFunc("GET /ui/admin/users", adminUsersPageHandler)
+	mux.HandleFunc("GET /{$}", statusPageHandler(deps.CookieSecurity))
+	mux.HandleFunc("GET /ui/status", statusPageHandler(deps.CookieSecurity))
+	mux.HandleFunc("GET /ui/map", mapPageHandler(deps.CookieSecurity))
+	mux.HandleFunc("GET /ui/admin/users", adminUsersPageHandler(deps.CookieSecurity))
 }
 
-func statusPageHandler(w http.ResponseWriter, r *http.Request) {
-	csrfToken := ensureCSRFCookie(w, r)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, renderUIPage(statusPageHTML, r, csrfToken))
+func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, renderUIPage(statusPageHTML, r, csrfToken))
+	}
 }
 
-func mapPageHandler(w http.ResponseWriter, r *http.Request) {
-	csrfToken := ensureCSRFCookie(w, r)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, renderUIPage(mapPageHTML, r, csrfToken))
+func mapPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, renderUIPage(mapPageHTML, r, csrfToken))
+	}
 }
 
-func adminUsersPageHandler(w http.ResponseWriter, r *http.Request) {
-	csrfToken := ensureCSRFCookie(w, r)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, renderUIPage(adminUsersPageHTML, r, csrfToken))
+func adminUsersPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, renderUIPage(adminUsersPageHTML, r, csrfToken))
+	}
 }
 
 func renderUIPage(page string, r *http.Request, csrfToken string) string {
