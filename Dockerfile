@@ -32,10 +32,15 @@ RUN mkdir -p /data/spool && chown -R plexplore:plexplore /app /data
 
 USER plexplore
 
+ENV APP_DEPLOYMENT_MODE=production
 ENV APP_HTTP_LISTEN_ADDR=0.0.0.0:8080
 ENV APP_SQLITE_PATH=/data/plexplore.db
 ENV APP_SPOOL_DIR=/data/spool
 ENV APP_MIGRATIONS_DIR=/app/migrations
+ENV APP_COOKIE_SECURE_MODE=always
+ENV APP_TRUST_PROXY_HEADERS=false
+ENV APP_EXPECT_TLS_TERMINATION=true
+ENV APP_ALLOW_INSECURE_HTTP=false
 
 VOLUME ["/data"]
 EXPOSE 8080

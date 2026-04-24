@@ -9,6 +9,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      # This compose file is production-oriented by default.
       APP_DEPLOYMENT_MODE: "production"
       APP_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
       APP_SQLITE_PATH: "/data/plexplore.db"
@@ -23,6 +24,7 @@ services:
       APP_COOKIE_SECURE_MODE: "always"
       APP_TRUST_PROXY_HEADERS: "false"
       APP_EXPECT_TLS_TERMINATION: "true"
+      APP_ALLOW_INSECURE_HTTP: "false"
       APP_RATE_LIMIT_ENABLED: "true"
       APP_RATE_LIMIT_LOGIN_MAX_REQUESTS: "10"
       APP_RATE_LIMIT_LOGIN_WINDOW: "1m"

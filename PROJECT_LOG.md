@@ -2296,6 +2296,119 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 06:03 UTC - Phase 82 (Shared Route Helper Fail-Closed Hardening)
+Implemented:
+- Removed remaining permissive fallback behavior from shared protected route helper functions.
+- Hardened helpers to fail closed with explicit dependency checks (panic on missing required deps):
+- `registerDeviceRoutesWithAuth(...)` now requires non-nil `deviceStore`, `userStore`, `sessionStore`
+- `registerPointRoutes(...)` now requires non-nil `pointStore`, `deviceStore`, `userStore`, `sessionStore`
+- `registerExportRoutes(...)` now requires non-nil `pointStore`, `deviceStore`, `userStore`, `sessionStore`
+- `registerVisitRoutes(...)` now requires non-nil `visitStore`, `deviceStore`, `userStore`, `sessionStore`
+- `registerUIRoutes(...)` now requires non-nil `userStore`, `sessionStore`
+- `registerUserRoutes(...)` now requires non-nil `userStore`, `sessionStore`
+- Removed legacy permissive shared wrapper `registerDeviceRoutes(...)` that previously delegated with nil auth deps.
+- Kept runtime wiring explicit and fail-closed via `RegisterRoutesWithDependencies(...)` gate checks from prior phase.
+- Updated test-only router builder `registerRoutesWithTestFallbacks(...)` to register permissive handler routes directly (test scope only), instead of calling fail-closed shared helpers with missing auth deps.
+- Added route-helper hardening tests:
+- `TestRouteHelpers_FailClosed_WhenAuthDepsMissing` validates missing-dependency panics for protected helper registrations.
+- Confirmed runtime behavior still blocks accidental protected exposure and public routes remain minimal.
+
+Architectural decisions:
+- Decision: Shared protected route helpers now fail fast on missing auth/session dependencies.
+  Reason: Prevents future alternate entrypoints from accidentally exposing protected UI/API routes via helper misuse.
+- Decision: Keep permissive fallback registration confined to clearly named test-only helper code.
+  Reason: Maintains targeted handler tests without weakening production/runtime helper semantics.
+
+Files changed:
+- `internal/api/devices.go`
+- `internal/api/points.go`
+- `internal/api/exports.go`
+- `internal/api/visits.go`
+- `internal/api/ui.go`
+- `internal/api/users.go`
+- `internal/api/routes_test_helpers_test.go`
+- `internal/api/router_security_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/devices.go internal/api/points.go internal/api/exports.go internal/api/visits.go internal/api/ui.go internal/api/users.go internal/api/routes_test_helpers_test.go internal/api/router_security_test.go`
+- `go test ./internal/api -count=1`
+- `go test ./...`
+
+Pending:
+- Optional: add package-level router registration docs/comments showing expected dependency contracts per helper for faster onboarding and safer future entrypoint additions.
+- Optional: evaluate replacing helper panics with explicit error-returning registration API if startup error propagation is preferred over panic semantics.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 05:52 UTC - Phase 81 (Docker/Runtime Production-Safe Defaults + Explicit Insecure Dev Opt-In)
+Implemented:
+- Hardened runtime startup security validation with fail-fast behavior:
+- `APP_COOKIE_SECURE_MODE=never` now requires explicit `APP_ALLOW_INSECURE_HTTP=true`
+- `APP_DEPLOYMENT_MODE=production` now requires `APP_COOKIE_SECURE_MODE=always`
+- `APP_DEPLOYMENT_MODE=production` now rejects `APP_ALLOW_INSECURE_HTTP=true`
+- Added explicit config knob:
+- `APP_ALLOW_INSECURE_HTTP` (default `false`)
+- Updated startup warning behavior to avoid proxy-warning noise when cookie mode is already `always`.
+- Updated Docker image defaults to production-oriented safe posture:
+- `APP_DEPLOYMENT_MODE=production`
+- `APP_COOKIE_SECURE_MODE=always`
+- `APP_EXPECT_TLS_TERMINATION=true`
+- `APP_TRUST_PROXY_HEADERS=false`
+- `APP_ALLOW_INSECURE_HTTP=false`
+- `APP_HTTP_LISTEN_ADDR=0.0.0.0:8080` (container bind)
+- Updated `compose.yaml` to keep production-oriented defaults explicit and include `APP_ALLOW_INSECURE_HTTP=false`.
+- Updated systemd sample env to include explicit insecure-mode toggle (`APP_ALLOW_INSECURE_HTTP=false`).
+- Updated README:
+- clear Docker production vs local-insecure modes
+- explicit insecure local HTTP opt-in instructions
+- fail-fast runtime security rules
+- updated container default env documentation
+- Added/updated tests:
+- config defaults and explicit insecure opt-in behavior
+- server runtime security validation for production/insecure combinations
+
+Architectural decisions:
+- Decision: Use fail-fast startup validation for unsafe cookie/runtime combinations rather than warning-only.
+  Reason: Users often run container images directly; failing fast prevents silent insecure deployment drift and enforces explicit intent for insecure local mode.
+- Decision: Keep insecure local HTTP possible only through explicit `APP_ALLOW_INSECURE_HTTP=true`.
+  Reason: Preserves developer ergonomics while making insecure behavior obvious and deliberate.
+
+Files changed:
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `cmd/server/main.go`
+- `cmd/server/main_test.go`
+- `Dockerfile`
+- `compose.yaml`
+- `deploy/systemd/plexplore.env.sample`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/config/config.go internal/config/config_test.go cmd/server/main.go cmd/server/main_test.go`
+- `go test ./internal/config -count=1`
+- `go test ./cmd/server -count=1`
+- `go test ./...`
+- `docker build -t plexplore:latest .`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" plexplore:latest`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false plexplore:latest`
+
+Pending:
+- Add optional startup self-check endpoint/diagnostic output for deployment-mode/security-mode summary to reduce operator confusion.
+- Evaluate adding a separate development compose override file for explicit insecure local workflows.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 05:40 UTC - Phase 80 (Route Registration Hardening: Remove Runtime Auth Fallbacks)
 Implemented:
 - Audited route registration and removed runtime reliance on unauthenticated fallback registration for protected functionality.

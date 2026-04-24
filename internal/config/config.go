@@ -47,6 +47,9 @@ type Config struct {
 	TrustProxyHeaders bool
 	// ExpectTLSTermination indicates deployment expects TLS at a reverse proxy.
 	ExpectTLSTermination bool
+	// AllowInsecureHTTP allows explicit insecure local HTTP mode.
+	// This must be explicitly enabled to use APP_COOKIE_SECURE_MODE=never.
+	AllowInsecureHTTP bool
 	// RateLimitEnabled controls in-process auth/admin route rate limiting.
 	RateLimitEnabled bool
 	// RateLimitLoginMaxRequests is the max login attempts per window.
@@ -95,6 +98,7 @@ func Load() Config {
 		CookieSecureMode:                   getCookieSecureMode("APP_COOKIE_SECURE_MODE", defaultCookieSecureModeForDeployment(deploymentMode)),
 		TrustProxyHeaders:                  getEnvBool("APP_TRUST_PROXY_HEADERS", false),
 		ExpectTLSTermination:               getEnvBool("APP_EXPECT_TLS_TERMINATION", defaultExpectTLSTerminationForDeployment(deploymentMode)),
+		AllowInsecureHTTP:                  getEnvBool("APP_ALLOW_INSECURE_HTTP", false),
 		RateLimitEnabled:                   getEnvBool("APP_RATE_LIMIT_ENABLED", true),
 		RateLimitLoginMaxRequests:          getEnvInt("APP_RATE_LIMIT_LOGIN_MAX_REQUESTS", 10),
 		RateLimitLoginWindow:               getEnvDuration("APP_RATE_LIMIT_LOGIN_WINDOW", time.Minute),

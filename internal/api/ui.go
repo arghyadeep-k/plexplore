@@ -1094,6 +1094,10 @@ const adminUsersPageHTML = `<!doctype html>
 `
 
 func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
+	if deps.UserStore == nil || deps.SessionStore == nil {
+		panic("registerUIRoutes requires non-nil userStore and sessionStore")
+	}
+
 	protectedHTML := func(handler http.HandlerFunc) http.Handler {
 		return LoadCurrentUserFromSession(
 			deps.SessionStore,

@@ -22,27 +22,28 @@ type recentPointsResponse struct {
 }
 
 func registerPointRoutes(mux *http.ServeMux, deps Dependencies) {
-	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
-		mux.Handle(
-			"GET /api/v1/points",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(pointsHandler(deps.PointStore, deps.DeviceStore))),
-			),
-		)
-		mux.Handle(
-			"GET /api/v1/points/recent",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(recentPointsHandler(deps.PointStore, deps.DeviceStore))),
-			),
-		)
-		return
+	if deps.PointStore == nil {
+		panic("registerPointRoutes requires non-nil pointStore")
 	}
-	mux.HandleFunc("GET /api/v1/points", pointsHandler(deps.PointStore, nil))
-	mux.HandleFunc("GET /api/v1/points/recent", recentPointsHandler(deps.PointStore, nil))
+	if deps.DeviceStore == nil || deps.UserStore == nil || deps.SessionStore == nil {
+		panic("registerPointRoutes requires non-nil deviceStore, userStore, and sessionStore")
+	}
+	mux.Handle(
+		"GET /api/v1/points",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(pointsHandler(deps.PointStore, deps.DeviceStore))),
+		),
+	)
+	mux.Handle(
+		"GET /api/v1/points/recent",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(recentPointsHandler(deps.PointStore, deps.DeviceStore))),
+		),
+	)
 }
 
 func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {

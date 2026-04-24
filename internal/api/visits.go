@@ -34,27 +34,28 @@ type listVisitsResponse struct {
 }
 
 func registerVisitRoutes(mux *http.ServeMux, deps Dependencies) {
-	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
-		mux.Handle(
-			"POST /api/v1/visits/generate",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(generateVisitsHandler(deps.VisitStore, deps.DeviceStore))),
-			),
-		)
-		mux.Handle(
-			"GET /api/v1/visits",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, deps.DeviceStore))),
-			),
-		)
-		return
+	if deps.VisitStore == nil {
+		panic("registerVisitRoutes requires non-nil visitStore")
 	}
-	mux.HandleFunc("POST /api/v1/visits/generate", generateVisitsHandler(deps.VisitStore, nil))
-	mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, nil))
+	if deps.DeviceStore == nil || deps.UserStore == nil || deps.SessionStore == nil {
+		panic("registerVisitRoutes requires non-nil deviceStore, userStore, and sessionStore")
+	}
+	mux.Handle(
+		"POST /api/v1/visits/generate",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(generateVisitsHandler(deps.VisitStore, deps.DeviceStore))),
+		),
+	)
+	mux.Handle(
+		"GET /api/v1/visits",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, deps.DeviceStore))),
+		),
+	)
 }
 
 func generateVisitsHandler(visitStore VisitStore, deviceStore DeviceStore) http.HandlerFunc {

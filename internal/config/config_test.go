@@ -17,6 +17,9 @@ func TestLoad_DefaultDeploymentModeIsDevelopment(t *testing.T) {
 	if cfg.ExpectTLSTermination {
 		t.Fatalf("expected development default expect TLS termination=false")
 	}
+	if cfg.AllowInsecureHTTP {
+		t.Fatalf("expected default allow insecure http=false")
+	}
 }
 
 func TestLoad_ProductionDefaultsEnforceTLSBackedCookieBehavior(t *testing.T) {
@@ -39,9 +42,13 @@ func TestLoad_ProductionDefaultsEnforceTLSBackedCookieBehavior(t *testing.T) {
 func TestLoad_DevelopmentExplicitInsecureCookieModeStillPossible(t *testing.T) {
 	t.Setenv("APP_DEPLOYMENT_MODE", "development")
 	t.Setenv("APP_COOKIE_SECURE_MODE", "never")
+	t.Setenv("APP_ALLOW_INSECURE_HTTP", "true")
 
 	cfg := Load()
 	if cfg.CookieSecureMode != "never" {
 		t.Fatalf("expected explicit development cookie mode never, got %q", cfg.CookieSecureMode)
+	}
+	if !cfg.AllowInsecureHTTP {
+		t.Fatalf("expected explicit allow insecure http=true")
 	}
 }

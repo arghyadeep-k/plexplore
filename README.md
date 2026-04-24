@@ -592,6 +592,7 @@ Route access model:
 - `POST /api/v1/users`
 
 Runtime route registration now avoids unauthenticated fallback wiring for protected routes. Test-only fallback route wiring is isolated to internal API test helpers.
+Shared protected route helper functions now fail closed (panic on missing required auth dependencies) so alternate/future entrypoints cannot silently downgrade to unauthenticated registration.
 
 - Session cookie:
 - name: `plexplore_session`
@@ -623,6 +624,7 @@ Rate limiting:
 Cookie/proxy knobs:
 - `APP_DEPLOYMENT_MODE=development|production` (default `development`)
 - `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto` in development, `always` in production)
+- `APP_ALLOW_INSECURE_HTTP=true|false` (default `false`; required to explicitly allow insecure local HTTP mode with `APP_COOKIE_SECURE_MODE=never`)
 - `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
 - `APP_EXPECT_TLS_TERMINATION=true|false` (default `false` in development, `true` in production; startup warning aid)
 
@@ -641,6 +643,10 @@ Deployment guidance:
 - `APP_COOKIE_SECURE_MODE=always` is the safest default and does not rely on forwarded headers.
 
 The service logs a startup warning for risky combinations (for example public bind with non-`always` cookie mode, or expected TLS termination without trusted proxy headers).
+The server now fails fast on unsafe cookie/runtime combinations:
+- `APP_COOKIE_SECURE_MODE=never` requires `APP_ALLOW_INSECURE_HTTP=true`
+- `APP_DEPLOYMENT_MODE=production` requires `APP_COOKIE_SECURE_MODE=always`
+- `APP_DEPLOYMENT_MODE=production` rejects `APP_ALLOW_INSECURE_HTTP=true`
 
 ## Raspberry Pi Deployment (systemd)
 
@@ -698,24 +704,45 @@ Files:
 Build image:
 
 ```bash
-docker build -t plexplore:dev .
+docker build -t plexplore:latest .
 ```
 
-Run container:
+Production-oriented container run (behind HTTPS reverse proxy):
 
 ```bash
 docker run --rm \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
+  -v "$(pwd)/data:/data" \
+  -e APP_DEPLOYMENT_MODE=production \
+  -e APP_HTTP_LISTEN_ADDR=0.0.0.0:8080 \
+  -e APP_COOKIE_SECURE_MODE=always \
+  -e APP_ALLOW_INSECURE_HTTP=false \
+  -e APP_TRUST_PROXY_HEADERS=false \
+  -e APP_EXPECT_TLS_TERMINATION=true \
+  -e APP_SQLITE_PATH=/data/plexplore.db \
+  -e APP_SPOOL_DIR=/data/spool \
+  plexplore:latest
+```
+
+Local insecure HTTP development (explicit opt-in):
+
+```bash
+docker run --rm \
+  -p 127.0.0.1:8080:8080 \
   -v "$(pwd)/data:/data" \
   -e APP_DEPLOYMENT_MODE=development \
   -e APP_HTTP_LISTEN_ADDR=0.0.0.0:8080 \
-  -e APP_COOKIE_SECURE_MODE=auto \
+  -e APP_COOKIE_SECURE_MODE=never \
+  -e APP_ALLOW_INSECURE_HTTP=true \
+  -e APP_TRUST_PROXY_HEADERS=false \
+  -e APP_EXPECT_TLS_TERMINATION=false \
   -e APP_SQLITE_PATH=/data/plexplore.db \
   -e APP_SPOOL_DIR=/data/spool \
-  plexplore:dev
+  plexplore:latest
 ```
 
 The container entrypoint runs migrations first, then starts the server.
+The image defaults are production-oriented (`APP_DEPLOYMENT_MODE=production`, secure cookies enabled, insecure HTTP disabled).
 
 Compose:
 
@@ -725,8 +752,8 @@ docker compose down
 ```
 
 Environment variables commonly used in containers:
-- `APP_DEPLOYMENT_MODE` (default in image: `development`)
-- `APP_HTTP_LISTEN_ADDR` (default in image: `127.0.0.1:8080`)
+- `APP_DEPLOYMENT_MODE` (default in image: `production`)
+- `APP_HTTP_LISTEN_ADDR` (default in image: `0.0.0.0:8080`)
 - `APP_SQLITE_PATH` (default in image: `/data/plexplore.db`)
 - `APP_SPOOL_DIR` (default in image: `/data/spool`)
 - `APP_MIGRATIONS_DIR` (default in image: `/app/migrations`)
@@ -737,6 +764,7 @@ Environment variables commonly used in containers:
 - `APP_FLUSH_TRIGGER_POINTS`
 - `APP_FLUSH_TRIGGER_BYTES`
 - `APP_COOKIE_SECURE_MODE`
+- `APP_ALLOW_INSECURE_HTTP`
 - `APP_TRUST_PROXY_HEADERS`
 - `APP_EXPECT_TLS_TERMINATION`
 - `APP_RATE_LIMIT_ENABLED`
@@ -772,6 +800,7 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_FLUSH_TRIGGER_POINTS` (default: `75%` of `APP_BUFFER_MAX_POINTS`): best-effort ingest-path flush trigger when buffered points reaches threshold.
 - `APP_FLUSH_TRIGGER_BYTES` (default: `75%` of `APP_BUFFER_MAX_BYTES`): best-effort ingest-path flush trigger when buffered bytes reaches threshold.
 - `APP_COOKIE_SECURE_MODE` (default: `auto` in development, `always` in production): cookie `Secure` policy (`auto`, `always`, `never`).
+- `APP_ALLOW_INSECURE_HTTP` (default: `false`): explicit opt-in for insecure local HTTP mode; required when `APP_COOKIE_SECURE_MODE=never`.
 - `APP_TRUST_PROXY_HEADERS` (default: `false`): allow trusted `X-Forwarded-Proto` to influence cookie `Secure` behavior.
 - `APP_EXPECT_TLS_TERMINATION` (default: `false` in development, `true` in production): deployment hint used for startup warnings when proxy/TLS settings look inconsistent.
 - `APP_RATE_LIMIT_ENABLED` (default: `true`): enable auth/admin in-process route limiting.

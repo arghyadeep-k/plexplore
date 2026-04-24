@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -25,6 +27,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := validateRuntimeSecurityConfig(cfg); err != nil {
+		log.Fatalf("invalid runtime security config: %v", err)
+	}
 	logCookieSecurityWarnings(cfg)
 
 	if err := os.MkdirAll(filepath.Dir(cfg.SQLitePath), 0o755); err != nil {
@@ -159,6 +164,25 @@ func main() {
 	}
 }
 
+func validateRuntimeSecurityConfig(cfg config.Config) error {
+	deploymentMode := strings.ToLower(strings.TrimSpace(cfg.DeploymentMode))
+	cookieMode := strings.ToLower(strings.TrimSpace(cfg.CookieSecureMode))
+
+	if cookieMode == "never" && !cfg.AllowInsecureHTTP {
+		return errors.New("APP_COOKIE_SECURE_MODE=never requires explicit APP_ALLOW_INSECURE_HTTP=true")
+	}
+	if deploymentMode == "production" && cfg.AllowInsecureHTTP {
+		return errors.New("APP_ALLOW_INSECURE_HTTP=true is not allowed with APP_DEPLOYMENT_MODE=production")
+	}
+	if deploymentMode == "production" && cookieMode != "always" {
+		return fmt.Errorf("APP_DEPLOYMENT_MODE=production requires APP_COOKIE_SECURE_MODE=always (got %q)", cookieMode)
+	}
+	if deploymentMode == "production" && cfg.ExpectTLSTermination && cookieMode == "auto" && !cfg.TrustProxyHeaders {
+		return errors.New("APP_DEPLOYMENT_MODE=production with APP_COOKIE_SECURE_MODE=auto and APP_EXPECT_TLS_TERMINATION=true requires APP_TRUST_PROXY_HEADERS=true")
+	}
+	return nil
+}
+
 func logCookieSecurityWarnings(cfg config.Config) {
 	deploymentMode := strings.ToLower(strings.TrimSpace(cfg.DeploymentMode))
 	mode := strings.ToLower(strings.TrimSpace(cfg.CookieSecureMode))
@@ -166,11 +190,14 @@ func logCookieSecurityWarnings(cfg config.Config) {
 	if publicBind && mode != "always" {
 		log.Printf("warning: HTTP bind is public (%s) and APP_COOKIE_SECURE_MODE=%s; cookies may travel over plain HTTP unless TLS is correctly configured", cfg.HTTPListenAddr, mode)
 	}
-	if cfg.ExpectTLSTermination && !cfg.TrustProxyHeaders {
+	if cfg.ExpectTLSTermination && !cfg.TrustProxyHeaders && mode != "always" {
 		log.Printf("warning: APP_EXPECT_TLS_TERMINATION=true but APP_TRUST_PROXY_HEADERS=false; proxied HTTPS requests may not receive Secure cookies")
 	}
 	if mode == "never" {
 		log.Printf("warning: APP_COOKIE_SECURE_MODE=never disables Secure cookies; use only for local HTTP development")
+	}
+	if cfg.AllowInsecureHTTP {
+		log.Printf("warning: APP_ALLOW_INSECURE_HTTP=true explicitly enables insecure HTTP mode; use only for local development")
 	}
 	if deploymentMode == "production" && mode != "always" && !(mode == "auto" && cfg.TrustProxyHeaders) {
 		log.Printf("warning: APP_DEPLOYMENT_MODE=production is set but cookie security is not TLS-backed by default (APP_COOKIE_SECURE_MODE=%s, APP_TRUST_PROXY_HEADERS=%t)", mode, cfg.TrustProxyHeaders)

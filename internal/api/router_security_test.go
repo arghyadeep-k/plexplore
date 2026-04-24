@@ -12,6 +12,16 @@ import (
 	"plexplore/internal/store"
 )
 
+func expectPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatalf("expected panic, got none")
+		}
+	}()
+	fn()
+}
+
 func TestRuntimeRouter_NoUnauthFallbackProtectedRoutes(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutesWithDependencies(mux, Dependencies{
@@ -44,6 +54,24 @@ func TestRuntimeRouter_NoUnauthFallbackProtectedRoutes(t *testing.T) {
 	if healthRec.Code != http.StatusOK {
 		t.Fatalf("expected /health to remain public, got %d body=%s", healthRec.Code, healthRec.Body.String())
 	}
+}
+
+func TestRouteHelpers_FailClosed_WhenAuthDepsMissing(t *testing.T) {
+	expectPanic(t, func() {
+		registerDeviceRoutesWithAuth(http.NewServeMux(), &fakeDeviceStore{}, nil, nil, RateLimiters{})
+	})
+	expectPanic(t, func() {
+		registerPointRoutes(http.NewServeMux(), Dependencies{PointStore: &fakePointStore{}})
+	})
+	expectPanic(t, func() {
+		registerExportRoutes(http.NewServeMux(), Dependencies{PointStore: &fakePointStore{}})
+	})
+	expectPanic(t, func() {
+		registerVisitRoutes(http.NewServeMux(), Dependencies{VisitStore: &fakeVisitStore{}})
+	})
+	expectPanic(t, func() {
+		registerUIRoutes(http.NewServeMux(), Dependencies{})
+	})
 }
 
 func TestRuntimeRouter_ProtectedRoutesDenyAnonymous(t *testing.T) {

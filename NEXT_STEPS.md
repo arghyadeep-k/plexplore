@@ -1,16 +1,19 @@
 # Next Steps
 
 ## Current milestone
-Runtime router hardening complete (protected route fallback registration removed from production wiring)
+Route helper hardening complete (shared protected route helpers are fail-closed; permissive wiring is test-only)
 
 ## Next 3 tasks
-1. Add startup/runtime guardrails for missing auth dependencies in non-test deployments (warn or fail-fast for incomplete protected-route wiring)
-2. Move inline UI scripts/styles into local static files so CSP can remove `'unsafe-inline'`
-3. Validate route access model in staging behind reverse proxy (public vs authenticated vs admin-only paths)
+1. Add package-level documentation for route helper dependency contracts to reduce accidental misuse in future entrypoints
+2. Add an optional `compose.dev.yaml` with explicit insecure local settings to keep production compose clean by default
+3. Move inline UI scripts/styles into local static files so CSP can remove `'unsafe-inline'`
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/config -count=1`
+- `go test ./cmd/server -count=1`
 - `go test ./internal/api -run 'TestRuntimeRouter_' -count=1`
+- `go test ./internal/api -run 'TestRouteHelpers_FailClosed_WhenAuthDepsMissing' -count=1`
 - `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|UIAssets_LeafletServedLocally|UIAssets_LeafletIconServedLocally|HealthEndpoint_RemainsPublic)' -count=1`
 - `curl -sS -D - -o /dev/null http://127.0.0.1:8080/ui/map`
 - `curl -sS http://127.0.0.1:8080/ui/map | rg 'ui/assets/leaflet|unpkg.com/leaflet'`
@@ -67,6 +70,9 @@ Runtime router hardening complete (protected route fallback registration removed
 - `go test ./internal/tasks -run TestRecoverFromSpool -count=1`
 - `go test ./internal/tasks -run TestIntegration -count=1`
 - `docker build -t plexplore:dev .`
+- `docker build -t plexplore:latest .`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" plexplore:latest`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false plexplore:latest`
 - `docker run --rm -p 18080:8080 -v $(pwd)/data:/data plexplore:dev`
 - `docker compose up --build`
 - `docker compose down`
@@ -103,6 +109,9 @@ Run `make migrate` before server run against a fresh database to ensure required
 Leaflet map assets are now self-hosted under `/ui/assets/leaflet/*`; CDN references were removed from map UI.
 Baseline browser security headers are now applied, with CSP currently allowing `'unsafe-inline'` on HTML pages to preserve existing inline UI scripts/styles.
 Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
+Shared protected route helpers now panic on missing required auth deps to enforce fail-closed registration in future entrypoints.
+Insecure local HTTP mode now requires explicit `APP_ALLOW_INSECURE_HTTP=true` when `APP_COOKIE_SECURE_MODE=never`.
+Production mode now fails fast unless `APP_COOKIE_SECURE_MODE=always`, and rejects `APP_ALLOW_INSECURE_HTTP=true`.
 On transient SQLite failure, keep drained records by requeueing them to the RAM buffer front.
 Current auth model is multi-user with admin-created accounts and per-user data isolation.
 Device create/rotate responses return full `api_key` once; list/read responses only return masked `api_key_preview`.

@@ -26,27 +26,28 @@ type geoJSONGeometry struct {
 }
 
 func registerExportRoutes(mux *http.ServeMux, deps Dependencies) {
-	if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
-		mux.Handle(
-			"GET /api/v1/exports/geojson",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(geoJSONExportHandler(deps.PointStore, deps.DeviceStore))),
-			),
-		)
-		mux.Handle(
-			"GET /api/v1/exports/gpx",
-			LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuth(http.HandlerFunc(gpxExportHandler(deps.PointStore, deps.DeviceStore))),
-			),
-		)
-		return
+	if deps.PointStore == nil {
+		panic("registerExportRoutes requires non-nil pointStore")
 	}
-	mux.HandleFunc("GET /api/v1/exports/geojson", geoJSONExportHandler(deps.PointStore, nil))
-	mux.HandleFunc("GET /api/v1/exports/gpx", gpxExportHandler(deps.PointStore, nil))
+	if deps.DeviceStore == nil || deps.UserStore == nil || deps.SessionStore == nil {
+		panic("registerExportRoutes requires non-nil deviceStore, userStore, and sessionStore")
+	}
+	mux.Handle(
+		"GET /api/v1/exports/geojson",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(geoJSONExportHandler(deps.PointStore, deps.DeviceStore))),
+		),
+	)
+	mux.Handle(
+		"GET /api/v1/exports/gpx",
+		LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(http.HandlerFunc(gpxExportHandler(deps.PointStore, deps.DeviceStore))),
+		),
+	)
 }
 
 func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {

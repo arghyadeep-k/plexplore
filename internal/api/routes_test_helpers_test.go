@@ -11,7 +11,14 @@ func registerRoutesWithTestFallbacks(mux *http.ServeMux, deps Dependencies) {
 	registerUIRoutesWithFallbacksForTest(mux, deps)
 
 	if deps.DeviceStore != nil {
-		registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore, deps.RateLimiters)
+		if deps.UserStore != nil && deps.SessionStore != nil {
+			registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore, deps.RateLimiters)
+		} else {
+			mux.HandleFunc("POST /api/v1/devices", createDeviceHandler(deps.DeviceStore))
+			mux.HandleFunc("GET /api/v1/devices", listDevicesHandler(deps.DeviceStore))
+			mux.HandleFunc("GET /api/v1/devices/{id}", getDeviceHandler(deps.DeviceStore))
+			mux.HandleFunc("POST /api/v1/devices/{id}/rotate-key", rotateDeviceKeyHandler(deps.DeviceStore))
+		}
 	}
 	if deps.DeviceStore != nil && deps.Spool != nil && deps.Buffer != nil {
 		registerIngestRoutes(mux, deps)
@@ -20,11 +27,23 @@ func registerRoutesWithTestFallbacks(mux *http.ServeMux, deps Dependencies) {
 		registerStatusRoutes(mux, deps)
 	}
 	if deps.PointStore != nil {
-		registerPointRoutes(mux, deps)
-		registerExportRoutes(mux, deps)
+		if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
+			registerPointRoutes(mux, deps)
+			registerExportRoutes(mux, deps)
+		} else {
+			mux.HandleFunc("GET /api/v1/points", pointsHandler(deps.PointStore, nil))
+			mux.HandleFunc("GET /api/v1/points/recent", recentPointsHandler(deps.PointStore, nil))
+			mux.HandleFunc("GET /api/v1/exports/geojson", geoJSONExportHandler(deps.PointStore, nil))
+			mux.HandleFunc("GET /api/v1/exports/gpx", gpxExportHandler(deps.PointStore, nil))
+		}
 	}
 	if deps.VisitStore != nil {
-		registerVisitRoutes(mux, deps)
+		if deps.UserStore != nil && deps.SessionStore != nil && deps.DeviceStore != nil {
+			registerVisitRoutes(mux, deps)
+		} else {
+			mux.HandleFunc("POST /api/v1/visits/generate", generateVisitsHandler(deps.VisitStore, nil))
+			mux.HandleFunc("GET /api/v1/visits", listVisitsHandler(deps.VisitStore, deps.VisitLabelResolver, nil))
+		}
 	}
 	if deps.UserStore != nil && deps.SessionStore != nil {
 		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity, deps.RateLimiters)

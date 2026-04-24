@@ -30,6 +30,10 @@ type createUserRequest struct {
 }
 
 func registerUserRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore, rateLimiters RateLimiters) {
+	if userStore == nil || sessionStore == nil {
+		panic("registerUserRoutes requires non-nil userStore and sessionStore")
+	}
+
 	withAdminSensitiveRateLimit := func(scope string, next http.Handler) http.Handler {
 		limiter := rateLimiters.AdminSensitive
 		if limiter == nil {
