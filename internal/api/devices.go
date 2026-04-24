@@ -95,6 +95,11 @@ func registerDeviceRoutesWithAuth(mux *http.ServeMux, deviceStore DeviceStore, u
 
 func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !validateCSRF(r) {
+			writeJSONError(w, http.StatusForbidden, "csrf token invalid")
+			return
+		}
+
 		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
 
 		var req createDeviceRequest
@@ -198,6 +203,11 @@ func getDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !validateCSRF(r) {
+			writeJSONError(w, http.StatusForbidden, "csrf token invalid")
+			return
+		}
+
 		currentUser, hasCurrentUser := CurrentUserFromContext(r.Context())
 
 		deviceID, err := parseDeviceIDPath(r)

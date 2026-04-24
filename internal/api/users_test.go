@@ -103,7 +103,7 @@ func TestUsers_AdminCanCreateUser(t *testing.T) {
 		SessionStore: sessionStore,
 	})
 
-	body := bytes.NewBufferString(`{"email":"new@example.com","password":"testpass","is_admin":false}`)
+	body := bytes.NewBufferString(`{"email":"new@example.com","password":"very-strong-pass","is_admin":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CSRF-Token", "csrf-token-1")
@@ -142,7 +142,7 @@ func TestUsers_NonAdminCannotCreateUser(t *testing.T) {
 		SessionStore: sessionStore,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(`{"email":"new@example.com","password":"testpass"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(`{"email":"new@example.com","password":"very-strong-pass"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "user-token"})
 	rec := httptest.NewRecorder()
@@ -172,7 +172,7 @@ func TestUsers_AdminCreateRequiresCSRF(t *testing.T) {
 		SessionStore: sessionStore,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(`{"email":"new@example.com","password":"testpass"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(`{"email":"new@example.com","password":"very-strong-pass"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "admin-token"})
 	rec := httptest.NewRecorder()
@@ -180,6 +180,41 @@ func TestUsers_AdminCreateRequiresCSRF(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 without csrf token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUsers_AdminCreateRejectsShortPassword(t *testing.T) {
+	userStore := &fakeAdminUserStore{
+		nextID: 2,
+		users: []store.User{
+			{ID: 1, Email: "admin@example.com", IsAdmin: true, PasswordHash: "hash", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	sessionStore := &fakeAuthzSessionStore{
+		sessions: map[string]store.Session{
+			"admin-token": {Token: "admin-token", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		},
+	}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(`{"email":"new@example.com","password":"shortpass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "admin-token"})
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "csrf-token-1"})
+	req.Header.Set("X-CSRF-Token", "csrf-token-1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for short password, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "at least 12 characters") {
+		t.Fatalf("expected minimum length error message, got %s", rec.Body.String())
 	}
 }
 

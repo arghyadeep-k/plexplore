@@ -102,7 +102,7 @@ Password helper functions are now available in `internal/api/password.go`:
 - `HashPassword(plain string) (string, error)`
 - `VerifyPassword(hash, plain string) bool`
 
-Helpers reject empty passwords and use bcrypt hashes.
+Helpers require at least 12 characters and use bcrypt hashes.
 
 This phase adds schema/store building blocks only. Login/session/admin
 management endpoints are added in later tasks.
@@ -115,7 +115,7 @@ via CLI mode on the migrate command:
 ```bash
 go run ./cmd/migrate --create-admin \
   --email admin@example.com \
-  --password 'testpass'
+  --password 'admin-password-123'
 ```
 
 Optional flags:
@@ -163,7 +163,7 @@ Example login request:
 ```bash
 curl -X POST http://127.0.0.1:8080/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  --data "email=admin@example.com&password=testpass" -i
+  --data "email=admin@example.com&password=admin-password-123" -i
 ```
 
 ## Admin User Management API
@@ -184,7 +184,7 @@ Example create request (admin session cookie required):
 curl -X POST http://127.0.0.1:8080/api/v1/users \
   -H "Content-Type: application/json" \
   -H "Cookie: plexplore_session=<admin-session-token>" \
-  -d '{"email":"user2@example.com","password":"user2pass","is_admin":false}'
+  -d '{"email":"user2@example.com","password":"user2-password-123","is_admin":false}'
 ```
 
 ## Ingestion Endpoints

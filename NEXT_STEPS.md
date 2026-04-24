@@ -1,15 +1,18 @@
 # Next Steps
 
 ## Current milestone
-HSTS strategy clarified (reverse proxy owns HSTS today; in-app HSTS is future-only with direct TLS termination)
+Small security hardening complete: CSRF coverage on session write endpoints, map popup escaping, and minimum password length enforcement
 
 ## Next 3 tasks
-1. Validate production reverse-proxy headers in staging (HSTS + forwarded proto + cookie behavior)
-2. Add package-level documentation for route helper dependency contracts to reduce accidental misuse in future entrypoints
-3. Add an optional `compose.dev.yaml` with explicit insecure local settings to keep production compose clean by default
+1. CSP hardening: move inline UI styles/scripts into static assets and remove `'unsafe-inline'` from CSP
+2. Migration robustness: improve partial-migration recovery/idempotency for mixed sqlite3 environments
+3. Map privacy controls: make tile provider privacy posture explicit (blank/local/custom) and document operator guidance
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api`
+- `gofmt -w internal/api/*.go internal/tasks/*.go cmd/migrate/*.go`
+- `timeout 6s go run ./cmd/server`
 - `curl -I https://your-domain.example`
 - `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
 - `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`

@@ -19,6 +19,13 @@ type fakeDeviceStore struct {
 	lookupError error
 }
 
+const testCSRFToken = "csrf-token-for-test"
+
+func addCSRF(req *http.Request, token string) {
+	req.Header.Set("X-CSRF-Token", token)
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
+}
+
 func (f *fakeDeviceStore) CreateDevice(_ context.Context, params store.CreateDeviceParams) (store.Device, error) {
 	f.nextID++
 	d := store.Device{
@@ -83,6 +90,7 @@ func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 	body := []byte(`{"name":"phone","source_type":"owntracks","api_key":"abc123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -139,6 +147,7 @@ func TestDevicesAPI_GetMasksKey(t *testing.T) {
 	body := []byte(`{"name":"phone","source_type":"owntracks","api_key":"abc123"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
 	createReq.Header.Set("Content-Type", "application/json")
+	addCSRF(createReq, testCSRFToken)
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
@@ -169,6 +178,7 @@ func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
 	createBody := []byte(`{"name":"phone","source_type":"owntracks","api_key":"old-key"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
+	addCSRF(createReq, testCSRFToken)
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
@@ -186,6 +196,7 @@ func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
 	rotateBody := []byte(`{"api_key":"new-key"}`)
 	rotateReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewReader(rotateBody))
 	rotateReq.Header.Set("Content-Type", "application/json")
+	addCSRF(rotateReq, testCSRFToken)
 	rotateRec := httptest.NewRecorder()
 	mux.ServeHTTP(rotateRec, rotateReq)
 	if rotateRec.Code != http.StatusOK {
@@ -345,6 +356,7 @@ func TestDevicesAPI_AdminSensitiveWritesRateLimited(t *testing.T) {
 	req1.Header.Set("Content-Type", "application/json")
 	req1.RemoteAddr = "203.0.113.9:1234"
 	req1.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	addCSRF(req1, testCSRFToken)
 	rec1 := httptest.NewRecorder()
 	mux.ServeHTTP(rec1, req1)
 	if rec1.Code != http.StatusCreated {
@@ -355,6 +367,7 @@ func TestDevicesAPI_AdminSensitiveWritesRateLimited(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/json")
 	req2.RemoteAddr = "203.0.113.9:1234"
 	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	addCSRF(req2, testCSRFToken)
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusTooManyRequests {
@@ -380,6 +393,7 @@ func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{"api_key":"new-key"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -402,6 +416,7 @@ func TestDevicesAPI_CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"user_id":999,"name":"phone","source_type":"owntracks","api_key":"k10"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -430,6 +445,7 @@ func TestDevicesAPI_AdminCanCreateForSpecificUser_WhenSessionAuthEnabled(t *test
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"user_id":2,"name":"u2-phone-admin-created","source_type":"owntracks","api_key":"u2-admin-key"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-admin"})
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -441,5 +457,75 @@ func TestDevicesAPI_AdminCanCreateForSpecificUser_WhenSessionAuthEnabled(t *test
 	}
 	if ds.devices[0].UserID != 2 {
 		t.Fatalf("expected admin override user_id=2, got %d", ds.devices[0].UserID)
+	}
+}
+
+func TestDevicesAPI_CreateRequiresValidCSRF(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{DeviceStore: ds})
+
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"name":"phone","source_type":"owntracks"}`))
+	reqMissing.Header.Set("Content-Type", "application/json")
+	recMissing := httptest.NewRecorder()
+	mux.ServeHTTP(recMissing, reqMissing)
+	if recMissing.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without csrf token, got %d body=%s", recMissing.Code, recMissing.Body.String())
+	}
+
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"name":"phone","source_type":"owntracks"}`))
+	reqInvalid.Header.Set("Content-Type", "application/json")
+	reqInvalid.Header.Set("X-CSRF-Token", "csrf-header")
+	reqInvalid.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "csrf-cookie"})
+	recInvalid := httptest.NewRecorder()
+	mux.ServeHTTP(recInvalid, reqInvalid)
+	if recInvalid.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 with mismatched csrf token, got %d body=%s", recInvalid.Code, recInvalid.Body.String())
+	}
+
+	reqValid := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"name":"phone","source_type":"owntracks"}`))
+	reqValid.Header.Set("Content-Type", "application/json")
+	addCSRF(reqValid, testCSRFToken)
+	recValid := httptest.NewRecorder()
+	mux.ServeHTTP(recValid, reqValid)
+	if recValid.Code != http.StatusCreated {
+		t.Fatalf("expected 201 with valid csrf token, got %d body=%s", recValid.Code, recValid.Body.String())
+	}
+}
+
+func TestDevicesAPI_RotateRequiresValidCSRF(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 1, Name: "phone", SourceType: "owntracks", APIKey: "old-key", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{DeviceStore: ds})
+
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{}`))
+	reqMissing.Header.Set("Content-Type", "application/json")
+	recMissing := httptest.NewRecorder()
+	mux.ServeHTTP(recMissing, reqMissing)
+	if recMissing.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without csrf token, got %d body=%s", recMissing.Code, recMissing.Body.String())
+	}
+
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{}`))
+	reqInvalid.Header.Set("Content-Type", "application/json")
+	reqInvalid.Header.Set("X-CSRF-Token", "csrf-header")
+	reqInvalid.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "csrf-cookie"})
+	recInvalid := httptest.NewRecorder()
+	mux.ServeHTTP(recInvalid, reqInvalid)
+	if recInvalid.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 with mismatched csrf token, got %d body=%s", recInvalid.Code, recInvalid.Body.String())
+	}
+
+	reqValid := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{}`))
+	reqValid.Header.Set("Content-Type", "application/json")
+	addCSRF(reqValid, testCSRFToken)
+	recValid := httptest.NewRecorder()
+	mux.ServeHTTP(recValid, reqValid)
+	if recValid.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid csrf token, got %d body=%s", recValid.Code, recValid.Body.String())
 	}
 }

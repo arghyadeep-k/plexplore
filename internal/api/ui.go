@@ -800,7 +800,11 @@ const mapPageHTML = `<!doctype html>
         if (points.length <= 500) {
           for (const p of points) {
             L.circleMarker([p.lat, p.lon], { radius: 3, weight: 1 })
-              .bindPopup("seq=" + p.seq + "<br>" + p.timestamp_utc + "<br>" + p.device_id)
+              .bindPopup(
+                "seq=" + String(p.seq) + "<br>" +
+                escapeHTML(p.timestamp_utc || "") + "<br>" +
+                escapeHTML(p.device_id || "")
+              )
               .addTo(trackLayer);
           }
         }

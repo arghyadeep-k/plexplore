@@ -147,6 +147,9 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if !strings.Contains(body, "/api/v1/visits") {
 		t.Fatalf("expected visits endpoint usage in map page, got %q", body)
 	}
+	if !strings.Contains(body, `escapeHTML(p.timestamp_utc || "")`) || !strings.Contains(body, `escapeHTML(p.device_id || "")`) {
+		t.Fatalf("expected escaped map popup fields for timestamp/device, got %q", body)
+	}
 	if !strings.Contains(body, "visitLayer") {
 		t.Fatalf("expected visit layer rendering in map page script, got %q", body)
 	}

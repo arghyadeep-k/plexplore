@@ -3771,3 +3771,60 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 03:20 UTC - Phase 79 (Security Fixes: CSRF Coverage, Map Popup Escaping, Password Policy)
+Implemented:
+- Added CSRF validation to session-authenticated write endpoints:
+- `POST /api/v1/devices`
+- `POST /api/v1/devices/{id}/rotate-key`
+- `POST /api/v1/visits/generate`
+- Kept ingest API-key endpoints unchanged (no CSRF required for `/api/v1/owntracks` and `/api/v1/overland/batches`).
+- Escaped map popup stored fields in `/ui/map` script:
+- `timestamp_utc` and `device_id` in point marker popup now pass through `escapeHTML(...)`.
+- Enforced minimum password length policy:
+- Added `MinPasswordLength = 12`
+- Added `ErrPasswordTooShort`
+- Updated `HashPassword(...)` to reject passwords shorter than 12 characters.
+- Updated tests for CSRF-required writes and minimum password policy:
+- Added explicit CSRF missing/invalid/valid coverage for device create/rotate and visit generation.
+- Updated session-auth integration helpers to include CSRF for device write calls.
+- Updated login/user/migrate tests to use >=12-character passwords.
+- Updated README examples and password policy note.
+
+Architectural decisions:
+- Decision: Reuse existing double-submit CSRF pattern (cookie + `X-CSRF-Token`) for newly protected write endpoints instead of introducing new middleware.
+  Reason: Small, focused change that matches existing auth flows and keeps handler behavior consistent.
+- Decision: Set minimum password length to 12 in password helper.
+  Reason: Improves baseline credential hygiene with minimal implementation overhead.
+
+Files changed:
+- `internal/api/devices.go`
+- `internal/api/visits.go`
+- `internal/api/ui.go`
+- `internal/api/password.go`
+- `internal/api/password_test.go`
+- `internal/api/devices_test.go`
+- `internal/api/visits_test.go`
+- `internal/api/users_test.go`
+- `internal/api/ui_test.go`
+- `internal/api/login_test.go`
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `cmd/migrate/main_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w /mnt/d/code/plexplore/internal/api/devices.go /mnt/d/code/plexplore/internal/api/visits.go /mnt/d/code/plexplore/internal/api/ui.go /mnt/d/code/plexplore/internal/api/password.go /mnt/d/code/plexplore/internal/api/password_test.go /mnt/d/code/plexplore/internal/api/devices_test.go /mnt/d/code/plexplore/internal/api/visits_test.go /mnt/d/code/plexplore/internal/api/users_test.go /mnt/d/code/plexplore/internal/api/login_test.go /mnt/d/code/plexplore/internal/tasks/multi_user_auth_integration_test.go /mnt/d/code/plexplore/cmd/migrate/main_test.go`
+- `go test ./internal/api`
+- `go test ./...`
+- `timeout 6s go run ./cmd/server`
+
+Pending:
+- Medium follow-up: CSP still allows `'unsafe-inline'`; move inline UI CSS/JS into static assets and tighten policy.
+- Medium follow-up: make migrations robust against partial-apply states without relying on SQLite features unavailable in older sqlite3 builds.
+- Low/medium follow-up: make map tile provider privacy posture explicit/configurable for blank/local/custom tiles.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

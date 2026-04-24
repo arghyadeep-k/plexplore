@@ -69,7 +69,7 @@ func newAuthIntegrationEnv(t *testing.T) *authIntegrationEnv {
 func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	env := newAuthIntegrationEnv(t)
 
-	adminPassword := "adminpass"
+	adminPassword := "admin-password-123"
 	adminHash, err := api.HashPassword(adminPassword)
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
@@ -85,14 +85,14 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	}
 
 	adminSession := env.login("admin@example.com", adminPassword)
-	user2ID := env.createUserAsAdmin(adminSession, "user2@example.com", "user2pass")
-	user3ID := env.createUserAsAdmin(adminSession, "user3@example.com", "user3pass")
+	user2ID := env.createUserAsAdmin(adminSession, "user2@example.com", "user2-password-123")
+	user3ID := env.createUserAsAdmin(adminSession, "user3@example.com", "user3-password-123")
 	if user2ID == user3ID || user2ID <= 0 || user3ID <= 0 {
 		t.Fatalf("unexpected created user ids: user2=%d user3=%d", user2ID, user3ID)
 	}
 
-	user2Session := env.login("user2@example.com", "user2pass")
-	user3Session := env.login("user3@example.com", "user3pass")
+	user2Session := env.login("user2@example.com", "user2-password-123")
+	user3Session := env.login("user3@example.com", "user3-password-123")
 
 	device2 := env.createDevice(user2Session, "phone-main", "u2-key")
 	device3 := env.createDevice(user3Session, "phone-main", "u3-key")
@@ -109,7 +109,7 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 		t.Fatalf("FlushNow failed: %v", err)
 	}
 
-	rotateDenied := env.postJSON("/api/v1/devices/"+strconv.FormatInt(device3.id, 10)+"/rotate-key", "", `{"api_key":"hijack-key"}`, user2Session)
+	rotateDenied := env.postJSONWithCSRF("/api/v1/devices/"+strconv.FormatInt(device3.id, 10)+"/rotate-key", "", `{"api_key":"hijack-key"}`, user2Session)
 	if rotateDenied.Code != http.StatusForbidden {
 		t.Fatalf("non-owner rotate expected 403, got %d body=%s", rotateDenied.Code, rotateDenied.Body.String())
 	}
@@ -180,7 +180,7 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 func TestIntegration_DeviceAPIKeyStoredHashedAtRest(t *testing.T) {
 	env := newAuthIntegrationEnv(t)
 
-	adminHash, err := api.HashPassword("adminpass")
+	adminHash, err := api.HashPassword("admin-password-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestIntegration_DeviceAPIKeyStoredHashedAtRest(t *testing.T) {
 		t.Fatalf("create admin failed: %v", err)
 	}
 
-	adminSession := env.login("admin@example.com", "adminpass")
+	adminSession := env.login("admin@example.com", "admin-password-123")
 	device := env.createDevice(adminSession, "phone-main", "plain-created-key")
 
 	ingest := env.postJSON("/api/v1/owntracks", device.apiKey, ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
@@ -290,7 +290,7 @@ func (e *authIntegrationEnv) createDevice(session webSession, name, apiKey strin
 	e.t.Helper()
 
 	body := `{"name":"` + name + `","source_type":"owntracks","api_key":"` + apiKey + `"}`
-	rec := e.postJSON("/api/v1/devices", "", body, session)
+	rec := e.postJSONWithCSRF("/api/v1/devices", "", body, session)
 	if rec.Code != http.StatusCreated {
 		e.t.Fatalf("create device expected 201, got %d body=%s", rec.Code, rec.Body.String())
 	}

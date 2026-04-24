@@ -89,7 +89,7 @@ func TestLoginPageServed(t *testing.T) {
 }
 
 func TestLoginSuccessSetsSessionCookie(t *testing.T) {
-	hash, err := HashPassword("test-pass")
+	hash, err := HashPassword("test-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestLoginSuccessSetsSessionCookie(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("email", "admin@example.com")
-	form.Set("password", "test-pass")
+	form.Set("password", "test-pass-123")
 	form.Set("csrf_token", csrfToken)
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -143,7 +143,7 @@ func TestLoginSuccessSetsSessionCookie(t *testing.T) {
 }
 
 func TestLoginSuccess_SetsSecureSessionCookie_WhenAlwaysMode(t *testing.T) {
-	hash, err := HashPassword("test-pass")
+	hash, err := HashPassword("test-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestLoginSuccess_SetsSecureSessionCookie_WhenAlwaysMode(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("email", "admin@example.com")
-	form.Set("password", "test-pass")
+	form.Set("password", "test-pass-123")
 	form.Set("csrf_token", csrfToken)
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -249,7 +249,7 @@ func TestLoginPageCSRFCookie_IgnoresForwardedProtoWhenUntrusted(t *testing.T) {
 }
 
 func TestLoginInvalidCredentials(t *testing.T) {
-	hash, err := HashPassword("correct-pass")
+	hash, err := HashPassword("correct-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 }
 
 func TestLoginInvalidCredentials_JSONStillReturnsJSON(t *testing.T) {
-	hash, err := HashPassword("correct-pass")
+	hash, err := HashPassword("correct-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestLoginInvalidCredentials_JSONStillReturnsJSON(t *testing.T) {
 }
 
 func TestLoginRateLimit_Hits429AfterRepeatedAttempts(t *testing.T) {
-	hash, err := HashPassword("correct-pass")
+	hash, err := HashPassword("correct-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestLoginRateLimit_Hits429AfterRepeatedAttempts(t *testing.T) {
 }
 
 func TestLoginRateLimit_AllowsNormalSuccessfulUsageUnderLimit(t *testing.T) {
-	hash, err := HashPassword("test-pass")
+	hash, err := HashPassword("test-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -431,7 +431,7 @@ func TestLoginRateLimit_AllowsNormalSuccessfulUsageUnderLimit(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("email", "admin@example.com")
-	form.Set("password", "test-pass")
+	form.Set("password", "test-pass-123")
 	form.Set("csrf_token", csrfToken)
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -446,7 +446,7 @@ func TestLoginRateLimit_AllowsNormalSuccessfulUsageUnderLimit(t *testing.T) {
 }
 
 func TestLoginSuccess_WithNextParamRedirectsToRequestedPage(t *testing.T) {
-	hash, err := HashPassword("test-pass")
+	hash, err := HashPassword("test-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestLoginSuccess_WithNextParamRedirectsToRequestedPage(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("email", "admin@example.com")
-	form.Set("password", "test-pass")
+	form.Set("password", "test-pass-123")
 	form.Set("csrf_token", csrfToken)
 	form.Set("next", "/ui/status")
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
@@ -521,7 +521,7 @@ func TestLogoutClearsSession(t *testing.T) {
 }
 
 func TestLoginRejectsMissingCSRFToken(t *testing.T) {
-	hash, err := HashPassword("test-pass")
+	hash, err := HashPassword("test-pass-123")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestLoginRejectsMissingCSRFToken(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("email", "admin@example.com")
-	form.Set("password", "test-pass")
+	form.Set("password", "test-pass-123")
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()

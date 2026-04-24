@@ -33,7 +33,7 @@ func TestRun_CreateAdmin_SuccessAndDuplicateBlocked(t *testing.T) {
 		"--migrations", migrationsDir,
 		"--create-admin",
 		"--email", "admin@example.com",
-		"--password", "test-pass",
+		"--password", "test-pass-123",
 	}, &output)
 	if err != nil {
 		t.Fatalf("run create-admin failed: %v", err)
@@ -55,10 +55,10 @@ func TestRun_CreateAdmin_SuccessAndDuplicateBlocked(t *testing.T) {
 	if !user.IsAdmin {
 		t.Fatalf("expected admin user, got %+v", user)
 	}
-	if user.PasswordHash == "test-pass" {
+	if user.PasswordHash == "test-pass-123" {
 		t.Fatalf("password hash stored as plaintext: %+v", user)
 	}
-	if !api.VerifyPassword(user.PasswordHash, "test-pass") {
+	if !api.VerifyPassword(user.PasswordHash, "test-pass-123") {
 		t.Fatalf("stored hash does not verify test password")
 	}
 
@@ -68,7 +68,7 @@ func TestRun_CreateAdmin_SuccessAndDuplicateBlocked(t *testing.T) {
 		"--migrations", migrationsDir,
 		"--create-admin",
 		"--email", "admin@example.com",
-		"--password", "test-pass",
+		"--password", "test-pass-123",
 	}, &output)
 	if err == nil || !strings.Contains(err.Error(), "admin already exists") {
 		t.Fatalf("expected duplicate admin error, got %v", err)
@@ -83,8 +83,8 @@ func TestRun_CreateAdmin_Validation(t *testing.T) {
 	cases := [][]string{
 		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin"},
 		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin", "--email", "admin@example.com"},
-		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin", "--password", "test-pass"},
-		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin", "--email", "admin@example.com", "--password", "test-pass", "--is-admin=false"},
+		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin", "--password", "test-pass-123"},
+		{"--db", dbPath, "--migrations", migrationsDir, "--create-admin", "--email", "admin@example.com", "--password", "test-pass-123", "--is-admin=false"},
 	}
 	for _, args := range cases {
 		output.Reset()

@@ -67,6 +67,7 @@ func TestGenerateVisitsEndpoint_DeviceAndRange(t *testing.T) {
 	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T00:00:00Z&min_dwell=10m&max_radius_m=25", nil)
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -106,11 +107,42 @@ func TestGenerateVisitsEndpoint_InvalidParams(t *testing.T) {
 	}
 	for _, path := range cases {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
+		addCSRF(req, testCSRFToken)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for %q, got %d body=%s", path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestGenerateVisitsEndpoint_RequiresValidCSRF(t *testing.T) {
+	vs := &fakeVisitStore{created: 1}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
+
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=phone-main", nil)
+	recMissing := httptest.NewRecorder()
+	mux.ServeHTTP(recMissing, reqMissing)
+	if recMissing.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without csrf token, got %d body=%s", recMissing.Code, recMissing.Body.String())
+	}
+
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=phone-main", nil)
+	reqInvalid.Header.Set("X-CSRF-Token", "csrf-header")
+	reqInvalid.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "csrf-cookie"})
+	recInvalid := httptest.NewRecorder()
+	mux.ServeHTTP(recInvalid, reqInvalid)
+	if recInvalid.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 with mismatched csrf token, got %d body=%s", recInvalid.Code, recInvalid.Body.String())
+	}
+
+	reqValid := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=phone-main", nil)
+	addCSRF(reqValid, testCSRFToken)
+	recValid := httptest.NewRecorder()
+	mux.ServeHTTP(recValid, reqValid)
+	if recValid.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid csrf token, got %d body=%s", recValid.Code, recValid.Body.String())
 	}
 }
 
@@ -302,6 +334,7 @@ func TestGenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled(t *
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=u2-phone", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	addCSRF(req, testCSRFToken)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 

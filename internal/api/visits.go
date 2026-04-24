@@ -60,6 +60,11 @@ func registerVisitRoutes(mux *http.ServeMux, deps Dependencies) {
 
 func generateVisitsHandler(visitStore VisitStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !validateCSRF(r) {
+			writeJSONError(w, http.StatusForbidden, "csrf token invalid")
+			return
+		}
+
 		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 		if deviceID == "" {
 			writeJSONError(w, http.StatusBadRequest, "device_id is required")
