@@ -31,15 +31,14 @@ type publicStatusResponse struct {
 }
 
 func registerStatusRoutes(mux *http.ServeMux, deps Dependencies) {
-	status := http.Handler(statusHandler(deps))
 	if deps.SessionStore != nil && deps.UserStore != nil {
-		status = LoadCurrentUserFromSession(
+		status := LoadCurrentUserFromSession(
 			deps.SessionStore,
 			deps.UserStore,
-			RequireUserSessionAuth(status),
+			RequireUserSessionAuth(http.Handler(statusHandler(deps))),
 		)
+		mux.Handle("GET /api/v1/status", status)
 	}
-	mux.Handle("GET /api/v1/status", status)
 	mux.HandleFunc("GET /status", publicStatusHandler)
 }
 

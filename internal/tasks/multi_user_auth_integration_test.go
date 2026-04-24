@@ -97,11 +97,11 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	device2 := env.createDevice(user2Session, "phone-main", "u2-key")
 	device3 := env.createDevice(user3Session, "phone-main", "u3-key")
 
-	ingest2 := env.postJSON("/api/v1/owntracks", "u2-key", ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
+	ingest2 := env.postJSON("/api/v1/owntracks", device2.apiKey, ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
 	if ingest2.Code != http.StatusOK {
 		t.Fatalf("user2 ingest expected 200, got %d body=%s", ingest2.Code, ingest2.Body.String())
 	}
-	ingest3 := env.postJSON("/api/v1/owntracks", "u3-key", ownTracksPayload(41.80200, -87.80200, 1713777660), webSession{})
+	ingest3 := env.postJSON("/api/v1/owntracks", device3.apiKey, ownTracksPayload(41.80200, -87.80200, 1713777660), webSession{})
 	if ingest3.Code != http.StatusOK {
 		t.Fatalf("user3 ingest expected 200, got %d body=%s", ingest3.Code, ingest3.Body.String())
 	}
@@ -196,9 +196,13 @@ func TestIntegration_DeviceAPIKeyStoredHashedAtRest(t *testing.T) {
 	adminSession := env.login("admin@example.com", "adminpass")
 	device := env.createDevice(adminSession, "phone-main", "plain-created-key")
 
-	ingest := env.postJSON("/api/v1/owntracks", "plain-created-key", ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
+	ingest := env.postJSON("/api/v1/owntracks", device.apiKey, ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
 	if ingest.Code != http.StatusOK {
 		t.Fatalf("ingest with created key expected 200, got %d body=%s", ingest.Code, ingest.Body.String())
+	}
+	ingestWithProvidedKey := env.postJSON("/api/v1/owntracks", "plain-created-key", ownTracksPayload(41.80110, -87.80110, 1713777660), webSession{})
+	if ingestWithProvidedKey.Code != http.StatusUnauthorized {
+		t.Fatalf("ingest with client-supplied create key should fail, got %d body=%s", ingestWithProvidedKey.Code, ingestWithProvidedKey.Body.String())
 	}
 
 	storedRaw := queryString(t, env.dbPath, fmt.Sprintf(`SELECT COALESCE(api_key, '') FROM devices WHERE id = %d;`, device.id))
@@ -216,8 +220,9 @@ func TestIntegration_DeviceAPIKeyStoredHashedAtRest(t *testing.T) {
 }
 
 type deviceCreationResult struct {
-	id   int64
-	name string
+	id     int64
+	name   string
+	apiKey string
 }
 
 func (e *authIntegrationEnv) login(email, password string) webSession {
@@ -290,15 +295,23 @@ func (e *authIntegrationEnv) createDevice(session webSession, name, apiKey strin
 		e.t.Fatalf("create device expected 201, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var out struct {
-		ID   int64  `json:"id"`
-		Name string `json:"name"`
+		ID     int64  `json:"id"`
+		Name   string `json:"name"`
+		APIKey string `json:"api_key"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		e.t.Fatalf("unmarshal created device failed: %v", err)
 	}
+	if strings.TrimSpace(out.APIKey) == "" {
+		e.t.Fatalf("expected server-generated api_key in create response, got body=%s", rec.Body.String())
+	}
+	if strings.TrimSpace(apiKey) != "" && strings.TrimSpace(out.APIKey) == strings.TrimSpace(apiKey) {
+		e.t.Fatalf("expected client-supplied api_key to be ignored by create flow")
+	}
 	return deviceCreationResult{
-		id:   out.ID,
-		name: out.Name,
+		id:     out.ID,
+		name:   out.Name,
+		apiKey: out.APIKey,
 	}
 }
 

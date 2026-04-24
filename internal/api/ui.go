@@ -389,12 +389,7 @@ const mapPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Plexplore Map</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
+  <link rel="stylesheet" href="/ui/assets/leaflet/leaflet.css" />
   <style>
     :root {
       --bg: #f4f6f8;
@@ -579,11 +574,7 @@ const mapPageHTML = `<!doctype html>
     </div>
   </div>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
+  <script src="/ui/assets/leaflet/leaflet.js"></script>
   <script>
     const THEME_KEY = "plexplore.theme";
 
@@ -1103,30 +1094,23 @@ const adminUsersPageHTML = `<!doctype html>
 `
 
 func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
-	if deps.SessionStore != nil && deps.UserStore != nil {
-		protectedHTML := func(handler http.HandlerFunc) http.Handler {
-			return LoadCurrentUserFromSession(
-				deps.SessionStore,
-				deps.UserStore,
-				RequireUserSessionAuthHTML(http.HandlerFunc(handler)),
-			)
-		}
-		mux.Handle("GET /{$}", protectedHTML(statusPageHandler(deps.CookieSecurity)))
-		mux.Handle("GET /ui/status", protectedHTML(statusPageHandler(deps.CookieSecurity)))
-		mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity)))
-		mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler(deps.CookieSecurity))))
-		return
+	protectedHTML := func(handler http.HandlerFunc) http.Handler {
+		return LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuthHTML(http.HandlerFunc(handler)),
+		)
 	}
-
-	mux.HandleFunc("GET /{$}", statusPageHandler(deps.CookieSecurity))
-	mux.HandleFunc("GET /ui/status", statusPageHandler(deps.CookieSecurity))
-	mux.HandleFunc("GET /ui/map", mapPageHandler(deps.CookieSecurity))
-	mux.HandleFunc("GET /ui/admin/users", adminUsersPageHandler(deps.CookieSecurity))
+	mux.Handle("GET /{$}", protectedHTML(statusPageHandler(deps.CookieSecurity)))
+	mux.Handle("GET /ui/status", protectedHTML(statusPageHandler(deps.CookieSecurity)))
+	mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity)))
+	mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler(deps.CookieSecurity))))
 }
 
 func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		setHTMLSecurityHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(statusPageHTML, r, csrfToken))
 	}
@@ -1135,6 +1119,7 @@ func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 func mapPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		setHTMLSecurityHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(mapPageHTML, r, csrfToken))
 	}
@@ -1143,6 +1128,7 @@ func mapPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 func adminUsersPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		setHTMLSecurityHeaders(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(adminUsersPageHTML, r, csrfToken))
 	}

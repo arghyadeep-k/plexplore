@@ -18,10 +18,14 @@ type createDeviceRequest struct {
 	UserID     int64  `json:"user_id"`
 	Name       string `json:"name"`
 	SourceType string `json:"source_type"`
-	APIKey     string `json:"api_key"`
+	// APIKey is accepted for backwards compatibility but ignored.
+	// Device keys are always server-generated.
+	APIKey string `json:"api_key"`
 }
 
 type rotateDeviceKeyRequest struct {
+	// APIKey is accepted for backwards compatibility but ignored.
+	// Device keys are always server-generated.
 	APIKey string `json:"api_key"`
 }
 
@@ -109,14 +113,10 @@ func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "name and source_type are required")
 			return
 		}
-		apiKey := strings.TrimSpace(req.APIKey)
-		if apiKey == "" {
-			generated, err := generateAPIKey()
-			if err != nil {
-				writeJSONError(w, http.StatusInternalServerError, "failed to generate api key")
-				return
-			}
-			apiKey = generated
+		apiKey, err := generateAPIKey()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to generate api key")
+			return
 		}
 
 		userID := req.UserID
@@ -228,15 +228,12 @@ func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		_ = req.APIKey
 
-		apiKey := strings.TrimSpace(req.APIKey)
-		if apiKey == "" {
-			generated, genErr := generateAPIKey()
-			if genErr != nil {
-				writeJSONError(w, http.StatusInternalServerError, "failed to generate api key")
-				return
-			}
-			apiKey = generated
+		apiKey, genErr := generateAPIKey()
+		if genErr != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to generate api key")
+			return
 		}
 
 		device, err = deviceStore.RotateDeviceAPIKey(r.Context(), deviceID, apiKey)
@@ -258,7 +255,7 @@ func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 }
 
 func generateAPIKey() (string, error) {
-	buf := make([]byte, 16)
+	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
@@ -340,6 +337,7 @@ func formatDeviceTimePtr(ts *time.Time) string {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	setCommonSecurityHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)

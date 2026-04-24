@@ -252,4 +252,7 @@ func TestHealthEndpoint_RemainsPublic(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on /health, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff header on /health, got %q", got)
+	}
 }

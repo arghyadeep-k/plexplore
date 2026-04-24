@@ -7,8 +7,9 @@ services:
     container_name: plexplore
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
+      APP_DEPLOYMENT_MODE: "production"
       APP_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
       APP_SQLITE_PATH: "/data/plexplore.db"
       APP_SPOOL_DIR: "/data/spool"
@@ -19,9 +20,9 @@ services:
       APP_FLUSH_BATCH_SIZE: "128"
       APP_FLUSH_TRIGGER_POINTS: "192"
       APP_FLUSH_TRIGGER_BYTES: "196608"
-      APP_COOKIE_SECURE_MODE: "auto"
+      APP_COOKIE_SECURE_MODE: "always"
       APP_TRUST_PROXY_HEADERS: "false"
-      APP_EXPECT_TLS_TERMINATION: "false"
+      APP_EXPECT_TLS_TERMINATION: "true"
       APP_RATE_LIMIT_ENABLED: "true"
       APP_RATE_LIMIT_LOGIN_MAX_REQUESTS: "10"
       APP_RATE_LIMIT_LOGIN_WINDOW: "1m"

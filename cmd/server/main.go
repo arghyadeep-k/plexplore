@@ -160,6 +160,7 @@ func main() {
 }
 
 func logCookieSecurityWarnings(cfg config.Config) {
+	deploymentMode := strings.ToLower(strings.TrimSpace(cfg.DeploymentMode))
 	mode := strings.ToLower(strings.TrimSpace(cfg.CookieSecureMode))
 	publicBind := isPublicBind(cfg.HTTPListenAddr)
 	if publicBind && mode != "always" {
@@ -170,6 +171,9 @@ func logCookieSecurityWarnings(cfg config.Config) {
 	}
 	if mode == "never" {
 		log.Printf("warning: APP_COOKIE_SECURE_MODE=never disables Secure cookies; use only for local HTTP development")
+	}
+	if deploymentMode == "production" && mode != "always" && !(mode == "auto" && cfg.TrustProxyHeaders) {
+		log.Printf("warning: APP_DEPLOYMENT_MODE=production is set but cookie security is not TLS-backed by default (APP_COOKIE_SECURE_MODE=%s, APP_TRUST_PROXY_HEADERS=%t)", mode, cfg.TrustProxyHeaders)
 	}
 }
 

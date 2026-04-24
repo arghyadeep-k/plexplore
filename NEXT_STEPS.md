@@ -1,15 +1,25 @@
 # Next Steps
 
 ## Current milestone
-Auth/admin route rate limiting complete (in-process fixed-window protection)
+Runtime router hardening complete (protected route fallback registration removed from production wiring)
 
 ## Next 3 tasks
-1. Tune rate-limit thresholds in staging/production based on real login/admin traffic patterns
-2. Update external monitors/checks to use public `/status` or authenticated `/api/v1/status` as appropriate
-3. Run production-like migration rehearsal on a copied DB and verify legacy plaintext key backfill behavior
+1. Add startup/runtime guardrails for missing auth dependencies in non-test deployments (warn or fail-fast for incomplete protected-route wiring)
+2. Move inline UI scripts/styles into local static files so CSP can remove `'unsafe-inline'`
+3. Validate route access model in staging behind reverse proxy (public vs authenticated vs admin-only paths)
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'TestRuntimeRouter_' -count=1`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|UIAssets_LeafletServedLocally|UIAssets_LeafletIconServedLocally|HealthEndpoint_RemainsPublic)' -count=1`
+- `curl -sS -D - -o /dev/null http://127.0.0.1:8080/ui/map`
+- `curl -sS http://127.0.0.1:8080/ui/map | rg 'ui/assets/leaflet|unpkg.com/leaflet'`
+- `curl -sS -D - -o /dev/null http://127.0.0.1:8080/ui/assets/leaflet/leaflet.css`
+- `go test ./internal/api -run 'TestDevicesAPI_|TestRequireDeviceAPIKeyAuth|TestDevicesAPI_AdminSensitiveWritesRateLimited' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_(MultiUserAuthorizationIsolation|DeviceAPIKeyStoredHashedAtRest)' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash)' -count=1`
+- `go test ./internal/config -count=1`
+- `go test ./internal/api -run 'Test(LoginSuccess_SetsSecureSessionCookie_WhenAlwaysMode|TestLoginSuccessSetsSessionCookie|TestLoginPageCSRFCookie_UsesTrustedForwardedProtoWhenEnabled|TestLoginPageCSRFCookie_IgnoresForwardedProtoWhenUntrusted)' -count=1`
 - `go test ./internal/api -run 'Test(LoginRateLimit_|FixedWindowLimiter_|RateLimitKeyForRequest_|RateLimit_NonSensitiveHealthRouteUnaffected|Users_AdminRoutesRateLimited|DevicesAPI_AdminSensitiveWritesRateLimited)' -count=1`
 - `go test ./internal/api -run 'TestStatusEndpoint_|TestHealthEndpoint_RemainsPublic|TestStatusPageServedAtRoot|TestUIRoutesRequireSession_WhenSessionDepsProvided|TestUIRoutesAllowSession_WhenValidSessionCookiePresent' -count=1`
 - `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash|GetDeviceByAPIKey_NotFound|ListDevices)' -count=1`
@@ -72,7 +82,7 @@ Auth/admin route rate limiting complete (in-process fixed-window protection)
 - `curl -sS http://127.0.0.1:8080/api/v1/status`
 - `curl -sS http://127.0.0.1:8080/api/v1/devices`
 - `curl -sS http://127.0.0.1:8080/api/v1/devices/1`
-- `curl -X POST http://127.0.0.1:8080/api/v1/devices/1/rotate-key -H "Content-Type: application/json" -d '{"api_key":"rotated-key"}'`
+- `curl -X POST http://127.0.0.1:8080/api/v1/devices/1/rotate-key -H "Content-Type: application/json" -d '{}'`
 - `curl -sS "http://127.0.0.1:8080/api/v1/points/recent?limit=20"`
 - `curl -sS "http://127.0.0.1:8080/api/v1/points?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"`
 - `curl -X POST "http://127.0.0.1:8080/api/v1/visits/generate?device_id=phone-main"`
@@ -90,6 +100,9 @@ Tune behavior through env config (segment size, fsync mode/interval/threshold, b
 `sqlite3` CLI is installed in current environment and migrations are verified working.
 Run `make migrate` before server run against a fresh database to ensure required tables exist.
 .gitignore baseline is now present; runtime state (`data/`) and `node_modules/` are ignored to avoid accidental commits.
+Leaflet map assets are now self-hosted under `/ui/assets/leaflet/*`; CDN references were removed from map UI.
+Baseline browser security headers are now applied, with CSP currently allowing `'unsafe-inline'` on HTML pages to preserve existing inline UI scripts/styles.
+Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
 On transient SQLite failure, keep drained records by requeueing them to the RAM buffer front.
 Current auth model is multi-user with admin-created accounts and per-user data isolation.
 Device create/rotate responses return full `api_key` once; list/read responses only return masked `api_key_preview`.
@@ -161,7 +174,7 @@ Startup logs now warn for risky cookie/proxy/public-bind combinations.
 Device API key hardening adds:
 - API keys are authenticated via `devices.api_key_hash` (SHA-256 of presented key).
 - DB backfill on store open migrates legacy plaintext `devices.api_key` to hash + preview and replaces plaintext with non-secret sentinel.
-- `POST /api/v1/devices` and `POST /api/v1/devices/{id}/rotate-key` still return full key once; list/read remain masked.
+- `POST /api/v1/devices` and `POST /api/v1/devices/{id}/rotate-key` now always generate server-side high-entropy keys and return full key once; supplied `api_key` fields are ignored; list/read remain masked.
 Status hardening adds:
 - `/health` stays public and minimal.
 - `/status` is public-safe and excludes internal runtime metadata.
@@ -171,6 +184,11 @@ Rate limiting adds:
 - `GET/POST /api/v1/users` and `POST /api/v1/devices`, `POST /api/v1/devices/{id}/rotate-key` protected by moderate per-IP limiter.
 - `APP_TRUST_PROXY_HEADERS=true` enables trusted `X-Forwarded-For` use for limiter keys; otherwise direct remote address is used.
 - New knobs: `APP_RATE_LIMIT_ENABLED`, `APP_RATE_LIMIT_LOGIN_MAX_REQUESTS`, `APP_RATE_LIMIT_LOGIN_WINDOW`, `APP_RATE_LIMIT_ADMIN_MAX_REQUESTS`, `APP_RATE_LIMIT_ADMIN_WINDOW`.
+Production cookie/deployment hardening adds:
+- `APP_DEPLOYMENT_MODE=development|production` controls safer defaults.
+- Default bind is now `127.0.0.1:8080`.
+- Development defaults: `APP_COOKIE_SECURE_MODE=auto`, `APP_EXPECT_TLS_TERMINATION=false`.
+- Production defaults: `APP_COOKIE_SECURE_MODE=always`, `APP_EXPECT_TLS_TERMINATION=true`.
 Task sequence in `codex_tasks.md` is complete through Task 7.
 Current active sequence is the newer 18-task multi-user auth plan in `codex_tasks.md`; continue strictly in order from Task 2.
 Continue strictly in order from Task 3 next.

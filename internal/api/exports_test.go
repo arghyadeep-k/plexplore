@@ -27,7 +27,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?device_id=phone-main&from=2026-04-22T11:00:00Z&to=2026-04-22T13:00:00Z", nil)
 	rec := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 func TestGeoJSONExport_InvalidTimestampQuery(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?from=bad-time", nil)
 	rec := httptest.NewRecorder()
@@ -109,7 +109,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=phone-main", nil)
 	rec := httptest.NewRecorder()
@@ -145,7 +145,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 func TestGPXExport_InvalidTimestampQuery(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?to=bad-time", nil)
 	rec := httptest.NewRecorder()
@@ -170,7 +170,7 @@ func TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -199,7 +199,7 @@ func TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T
 
 func TestGeoJSONExport_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   &fakePointStore{},
 		DeviceStore:  &fakeDeviceStore{},
 		UserStore:    &fakeUserStore{users: map[int64]store.User{}},
@@ -228,7 +228,7 @@ func TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T)
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},

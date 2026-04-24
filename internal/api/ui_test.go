@@ -12,9 +12,21 @@ import (
 
 func TestStatusPageServedAtRoot(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{})
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "u@example.com"},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-1": {Token: "tok-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -28,6 +40,18 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "Plexplore Status") {
 		t.Fatalf("expected status page title in body, got %q", body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Fatalf("expected CSP header on status page")
+	}
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options DENY, got %q", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected X-Content-Type-Options nosniff, got %q", got)
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got == "" {
+		t.Fatalf("expected Referrer-Policy header")
 	}
 	if !strings.Contains(body, "Recent Points") {
 		t.Fatalf("expected recent points section in body, got %q", body)
@@ -54,7 +78,10 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 
 func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{})
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ui/statu", nil)
 	rec := httptest.NewRecorder()
@@ -67,9 +94,21 @@ func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {
 
 func TestMapPageServedAtUIMap(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{})
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "u@example.com"},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-1": {Token: "tok-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ui/map", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -96,8 +135,11 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if !strings.Contains(body, "Refresh") {
 		t.Fatalf("expected refresh button label in body, got %q", body)
 	}
-	if !strings.Contains(strings.ToLower(body), "leaflet") {
-		t.Fatalf("expected leaflet assets in body, got %q", body)
+	if !strings.Contains(strings.ToLower(body), "/ui/assets/leaflet/leaflet.css") || !strings.Contains(strings.ToLower(body), "/ui/assets/leaflet/leaflet.js") {
+		t.Fatalf("expected self-hosted leaflet assets in body, got %q", body)
+	}
+	if strings.Contains(strings.ToLower(body), "unpkg.com/leaflet") {
+		t.Fatalf("did not expect CDN leaflet URL in body, got %q", body)
 	}
 	if !strings.Contains(body, "/api/v1/visits") {
 		t.Fatalf("expected visits endpoint usage in map page, got %q", body)
@@ -128,6 +170,45 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	}
 	if !strings.Contains(body, "localStorage") || !strings.Contains(body, "prefers-color-scheme") {
 		t.Fatalf("expected dark mode persistence/system preference hooks in map page, got %q", body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Fatalf("expected CSP header on map page")
+	}
+}
+
+func TestUIAssets_LeafletServedLocally(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/assets/leaflet/leaflet.css", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for local leaflet css, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(rec.Body.String()), ".leaflet-container") {
+		t.Fatalf("expected leaflet css content, got %q", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff header on local asset, got %q", got)
+	}
+}
+
+func TestUIAssets_LeafletIconServedLocally(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/assets/leaflet/images/marker-icon.png", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for local leaflet icon, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "image/png") {
+		t.Fatalf("expected image/png content type for marker icon, got %q", contentType)
 	}
 }
 

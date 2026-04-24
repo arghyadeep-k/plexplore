@@ -2224,6 +2224,139 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 05:16 UTC - Phase 79 (Baseline Security Headers + Self-Hosted Leaflet Assets)
+Implemented:
+- Switched map UI from CDN Leaflet to self-hosted local assets served by Plexplore.
+- Vendored Leaflet assets into repo:
+- `internal/api/assets/leaflet/leaflet.js`
+- `internal/api/assets/leaflet/leaflet.css`
+- `internal/api/assets/leaflet/images/marker-icon.png`
+- `internal/api/assets/leaflet/images/marker-icon-2x.png`
+- `internal/api/assets/leaflet/images/marker-shadow.png`
+- Added embedded static asset serving route:
+- `GET /ui/assets/{path...}` via `internal/api/ui_assets.go`
+- Updated map page HTML to load local Leaflet assets:
+- `/ui/assets/leaflet/leaflet.css`
+- `/ui/assets/leaflet/leaflet.js`
+- Added baseline security-header helpers and applied them to UI and JSON responses:
+- `Content-Security-Policy` (HTML pages)
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Permissions-Policy: geolocation=(), camera=(), microphone=()`
+- Applied HTML header set to status/map/users/login pages; applied common security headers to JSON responses via shared `writeJSON`.
+- Updated tests to verify:
+- map page references local Leaflet URLs and no longer references CDN URLs
+- local Leaflet asset routes serve successfully (CSS + marker icon)
+- expected security headers are present on UI responses
+- `/health` still works and returns security hardening header(s)
+- Updated README notes for self-hosted Leaflet and current CSP posture.
+
+Architectural decisions:
+- Decision: Serve Leaflet as embedded local static assets under `/ui/assets`.
+  Reason: Remove third-party CDN dependency while keeping the UI lightweight and deployment-simple for self-hosted Raspberry Pi environments.
+- Decision: Enforce baseline response hardening headers via lightweight helper functions, with CSP on HTML responses.
+  Reason: Improve browser-side safety with minimal code and no new dependencies.
+- Decision: Keep CSP compatible with existing inline scripts/styles by allowing `'unsafe-inline'` temporarily.
+  Reason: Preserve current lightweight no-build UI behavior while still restricting origins and moving toward stricter CSP in a future step.
+
+Files changed:
+- `internal/api/security_headers.go`
+- `internal/api/ui_assets.go`
+- `internal/api/ui.go`
+- `internal/api/login.go`
+- `internal/api/devices.go`
+- `internal/api/health.go`
+- `internal/api/ui_test.go`
+- `internal/api/status_test.go`
+- `internal/api/assets/leaflet/leaflet.js`
+- `internal/api/assets/leaflet/leaflet.css`
+- `internal/api/assets/leaflet/images/marker-icon.png`
+- `internal/api/assets/leaflet/images/marker-icon-2x.png`
+- `internal/api/assets/leaflet/images/marker-shadow.png`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/security_headers.go internal/api/ui_assets.go internal/api/ui.go internal/api/login.go internal/api/devices.go internal/api/health.go internal/api/ui_test.go internal/api/status_test.go`
+- `go test ./internal/api -run 'Test(StatusPageServedAtRoot|MapPageServedAtUIMap|UIAssets_LeafletServedLocally|UIAssets_LeafletIconServedLocally|HealthEndpoint_RemainsPublic)' -count=1`
+- `go test ./...`
+- `curl -sS -D - -o /dev/null http://127.0.0.1:8080/ui/map`
+- `curl -sS http://127.0.0.1:8080/ui/map | rg 'ui/assets/leaflet|unpkg.com/leaflet'`
+- `curl -sS -D - -o /dev/null http://127.0.0.1:8080/ui/assets/leaflet/leaflet.css`
+
+Pending:
+- Move inline UI scripts/styles to external static files to remove CSP `'unsafe-inline'` allowance.
+- Optionally self-host map tiles (or support configurable tile provider) for fully local/offline deployments.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 05:40 UTC - Phase 80 (Route Registration Hardening: Remove Runtime Auth Fallbacks)
+Implemented:
+- Audited route registration and removed runtime reliance on unauthenticated fallback registration for protected functionality.
+- Tightened `RegisterRoutesWithDependencies` to only register protected routes when required auth dependencies are present:
+- UI protected pages (`/`, `/ui/status`, `/ui/map`, `/ui/admin/users`) now register only when `UserStore` + `SessionStore` are configured.
+- Device management APIs now register only when `DeviceStore` + `UserStore` + `SessionStore` are configured.
+- Points/exports routes now register only when `PointStore` + `DeviceStore` + `UserStore` + `SessionStore` are configured.
+- Visits routes now register only when `VisitStore` + `DeviceStore` + `UserStore` + `SessionStore` are configured.
+- Login/user-admin routes remain explicit and require `UserStore` + `SessionStore`.
+- Kept ingest device-auth endpoints separate (API-key protected) and unchanged.
+- Hardened detailed status registration:
+- `/api/v1/status` is now registered only when session auth dependencies exist.
+- `/status` remains public-safe.
+- Simplified `registerUIRoutes(...)` to always apply session-auth middleware and removed its unauthenticated runtime fallback branch.
+- Added explicit test-only fallback wiring helper:
+- `registerRoutesWithTestFallbacks(...)` in `internal/api/routes_test_helpers_test.go`
+- preserves legacy unauth route wiring only for handler-behavior tests that intentionally bypass auth setup.
+- Updated tests using legacy fallback behavior (`devices/points/exports/visits`) to use test-only helper.
+- Added routing security coverage in `internal/api/router_security_test.go`:
+- verifies protected routes are not registered via runtime fallback without auth deps
+- verifies anonymous denial across protected UI/API routes when auth deps are configured
+- verifies canonical/alias protection consistency (`/` and `/ui/status`)
+- verifies admin-only routes reject authenticated non-admin sessions
+- verifies intentional public routes remain reachable (`/health`, `/status`, `/login`)
+- Updated README with explicit public/authenticated/admin route model and note about test-only fallback wiring.
+
+Architectural decisions:
+- Decision: Runtime router must not expose protected routes without auth dependencies; missing auth deps should result in non-registration (404), not public fallback.
+  Reason: Eliminates accidental unauthenticated access paths through alternate/fallback route wiring.
+- Decision: Keep fallback wiring only in test helpers.
+  Reason: Preserves focused handler tests without weakening production/runtime route safety.
+
+Files changed:
+- `internal/api/health.go`
+- `internal/api/ui.go`
+- `internal/api/status.go`
+- `internal/api/routes_test_helpers_test.go`
+- `internal/api/router_security_test.go`
+- `internal/api/devices_test.go`
+- `internal/api/points_test.go`
+- `internal/api/exports_test.go`
+- `internal/api/visits_test.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/health.go internal/api/ui.go internal/api/status.go internal/api/routes_test_helpers_test.go internal/api/points_test.go internal/api/exports_test.go internal/api/visits_test.go internal/api/devices_test.go internal/api/ui_test.go internal/api/router_security_test.go`
+- `go test ./internal/api -count=1`
+- `go test ./...`
+
+Pending:
+- Consider enforcing explicit startup validation/fatal logs when required auth dependencies for protected feature sets are missing in non-test runtime wiring.
+- Review whether any legacy helper constructors still imply unauthenticated behavior and document them clearly as test-only patterns.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-23 01:29 UTC - Phase 54 (Task 4: Session Model + Session Loader Middleware)
 Implemented:
 - Added session persistence migration:
@@ -3309,6 +3442,99 @@ Commands:
 Pending:
 - Tune route limit values for real deployment traffic patterns (especially admin automation/scripts).
 - Consider optional email+IP composite keying for login if abuse patterns require narrower targeting.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 03:54 UTC - Phase 77 (Production-Oriented Cookie/Deployment Defaults)
+Implemented:
+- Added explicit deployment profile knob `APP_DEPLOYMENT_MODE` (`development|production`) in config.
+- Refined security-oriented defaults:
+- default bind address changed to `127.0.0.1:8080` (safer local default)
+- cookie default now depends on deployment mode:
+- development default: `APP_COOKIE_SECURE_MODE=auto`
+- production default: `APP_COOKIE_SECURE_MODE=always`
+- TLS-termination expectation default now depends on deployment mode:
+- development default: `APP_EXPECT_TLS_TERMINATION=false`
+- production default: `APP_EXPECT_TLS_TERMINATION=true`
+- Added extra startup warning for inconsistent production cookie posture when `APP_DEPLOYMENT_MODE=production` but settings are not TLS-backed by default.
+- Updated production-oriented sample deployment defaults:
+- `compose.yaml`: `APP_DEPLOYMENT_MODE=production`, loopback-only host publish (`127.0.0.1:8080:8080`), `APP_COOKIE_SECURE_MODE=always`, `APP_EXPECT_TLS_TERMINATION=true`
+- `deploy/systemd/plexplore.env.sample`: production mode, loopback bind, secure cookie defaults, TLS-termination expectation enabled
+- Updated README with clearly separated local-development vs production HTTPS guidance and revised defaults.
+- Added config tests validating deployment-mode-derived defaults and explicit development override behavior.
+- Re-ran targeted + full test suite successfully.
+
+Architectural decisions:
+- Decision: Introduce deployment-mode-driven defaults instead of hardcoding one cookie policy for all environments.
+  Reason: Preserve local HTTP development ergonomics while making production defaults explicitly TLS-backed and safer by default.
+
+Files changed:
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `cmd/server/main.go`
+- `compose.yaml`
+- `deploy/systemd/plexplore.env.sample`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/config/config.go internal/config/config_test.go cmd/server/main.go`
+- `go test ./internal/config -count=1`
+- `go test ./internal/api -run 'Test(LoginSuccess_SetsSecureSessionCookie_WhenAlwaysMode|TestLoginSuccessSetsSessionCookie|TestLoginPageCSRFCookie_UsesTrustedForwardedProtoWhenEnabled|TestLoginPageCSRFCookie_IgnoresForwardedProtoWhenUntrusted)' -count=1`
+- `go test ./...`
+
+Pending:
+- Validate final production deployment topology docs against actual reverse proxy config (Caddy/Nginx) to ensure operator examples remain exact.
+- Consider adding explicit `APP_TRUST_PROXY_HEADERS=true` sample profile for operators who choose `APP_COOKIE_SECURE_MODE=auto` behind trusted TLS proxy.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 04:10 UTC - Phase 78 (Server-Generated Device Keys Only)
+Implemented:
+- Hardened device credential issuance so client-provided API keys are no longer effective:
+- `POST /api/v1/devices` now always generates a server-side API key and ignores supplied `api_key` input
+- `POST /api/v1/devices/{id}/rotate-key` now always generates a fresh server-side API key and ignores supplied `api_key` input
+- Increased generated device key entropy from 16 random bytes to 32 random bytes (hex-encoded 64-char bearer key).
+- Kept one-time key display contract:
+- create/rotate responses return plaintext key exactly once
+- list/read responses remain masked preview only
+- Preserved hash-at-rest authentication model:
+- ingest auth continues to verify presented key via `api_key_hash`
+- DB continues to persist hash + preview and non-secret sentinel in legacy `api_key` column
+- Updated integration and API tests to assert:
+- user-supplied create/rotate keys are ignored
+- generated key is returned once and required for ingest
+- old key is invalid after rotation
+- plaintext is not stored at rest
+- Updated README and operational notes to document server-generated key workflow and revised curl examples.
+
+Architectural decisions:
+- Decision: Ignore (rather than reject) incoming `api_key` fields for create/rotate while always generating server keys.
+  Reason: Preserves backward compatibility for existing clients that still send `api_key` fields, without allowing weak/supplied credentials to become effective.
+
+Files changed:
+- `internal/api/devices.go`
+- `internal/api/devices_test.go`
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/devices.go internal/api/devices_test.go internal/tasks/multi_user_auth_integration_test.go`
+- `go test ./internal/api -run 'TestDevicesAPI_|TestRequireDeviceAPIKeyAuth|TestDevicesAPI_AdminSensitiveWritesRateLimited' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_(MultiUserAuthorizationIsolation|DeviceAPIKeyStoredHashedAtRest)' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash)' -count=1`
+- `go test ./...`
+
+Pending:
+- Optional future tightening: explicitly reject `api_key` fields with validation error once all known clients are migrated away from sending them.
+- Optional migration cleanup: remove legacy sentinel `devices.api_key` column via table rebuild when operationally convenient.
 
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.

@@ -64,7 +64,7 @@ func (f *fakeVisitStore) ListVisits(_ context.Context, deviceID string, fromUTC,
 func TestGenerateVisitsEndpoint_DeviceAndRange(t *testing.T) {
 	vs := &fakeVisitStore{created: 2}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{VisitStore: vs})
+	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/visits/generate?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T00:00:00Z&min_dwell=10m&max_radius_m=25", nil)
 	rec := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestGenerateVisitsEndpoint_DeviceAndRange(t *testing.T) {
 func TestGenerateVisitsEndpoint_InvalidParams(t *testing.T) {
 	vs := &fakeVisitStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{VisitStore: vs})
+	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
 
 	cases := []string{
 		"/api/v1/visits/generate",
@@ -129,7 +129,7 @@ func TestListVisitsEndpoint(t *testing.T) {
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{VisitStore: vs})
+	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/visits?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=7", nil)
 	rec := httptest.NewRecorder()
@@ -149,7 +149,7 @@ func TestListVisitsEndpoint(t *testing.T) {
 func TestListVisitsEndpoint_InvalidParams(t *testing.T) {
 	vs := &fakeVisitStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{VisitStore: vs})
+	registerRoutesWithTestFallbacks(mux, Dependencies{VisitStore: vs})
 
 	cases := []string{
 		"/api/v1/visits?from=bad",
@@ -196,7 +196,7 @@ func TestListVisitsEndpoint_WithVisitLabelResolver(t *testing.T) {
 		label:      "Cached Place",
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		VisitStore:         vs,
 		VisitLabelResolver: resolver,
 	})
@@ -260,7 +260,7 @@ func TestListVisitsEndpoint_UserSeesOnlyOwnVisits_WhenSessionAuthEnabled(t *test
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		VisitStore:   vs,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -293,7 +293,7 @@ func TestGenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled(t *
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		VisitStore:   vs,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -315,7 +315,7 @@ func TestGenerateVisitsEndpoint_CrossUserDeviceDenied_WhenSessionAuthEnabled(t *
 
 func TestVisitsEndpoints_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		VisitStore:   &fakeVisitStore{},
 		DeviceStore:  &fakeDeviceStore{},
 		UserStore:    &fakeUserStore{users: map[int64]store.User{}},

@@ -8,6 +8,9 @@ import (
 )
 
 type Config struct {
+	// DeploymentMode controls production vs development-oriented defaults.
+	// Allowed values: development, production.
+	DeploymentMode string
 	// HTTPListenAddr is the bind address for the API server (host:port).
 	HTTPListenAddr string
 	// SQLitePath is the on-disk SQLite database file path.
@@ -72,9 +75,11 @@ type Config struct {
 func Load() Config {
 	bufferMaxPoints := getEnvInt("APP_BUFFER_MAX_POINTS", 256)
 	bufferMaxBytes := getEnvInt("APP_BUFFER_MAX_BYTES", 256*1024)
+	deploymentMode := getDeploymentMode("APP_DEPLOYMENT_MODE", "development")
 
 	return Config{
-		HTTPListenAddr:                     getEnv("APP_HTTP_LISTEN_ADDR", "0.0.0.0:8080"),
+		DeploymentMode:                     deploymentMode,
+		HTTPListenAddr:                     getEnv("APP_HTTP_LISTEN_ADDR", "127.0.0.1:8080"),
 		SQLitePath:                         getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
 		SpoolDir:                           getEnv("APP_SPOOL_DIR", "./data/spool"),
 		SpoolSegmentMaxBytes:               getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
@@ -87,9 +92,9 @@ func Load() Config {
 		FlushBatchSize:                     getEnvInt("APP_FLUSH_BATCH_SIZE", 128),
 		FlushTriggerPoints:                 getEnvInt("APP_FLUSH_TRIGGER_POINTS", defaultFlushTriggerThreshold(bufferMaxPoints)),
 		FlushTriggerBytes:                  getEnvInt("APP_FLUSH_TRIGGER_BYTES", defaultFlushTriggerThreshold(bufferMaxBytes)),
-		CookieSecureMode:                   getCookieSecureMode("APP_COOKIE_SECURE_MODE", "auto"),
+		CookieSecureMode:                   getCookieSecureMode("APP_COOKIE_SECURE_MODE", defaultCookieSecureModeForDeployment(deploymentMode)),
 		TrustProxyHeaders:                  getEnvBool("APP_TRUST_PROXY_HEADERS", false),
-		ExpectTLSTermination:               getEnvBool("APP_EXPECT_TLS_TERMINATION", false),
+		ExpectTLSTermination:               getEnvBool("APP_EXPECT_TLS_TERMINATION", defaultExpectTLSTerminationForDeployment(deploymentMode)),
 		RateLimitEnabled:                   getEnvBool("APP_RATE_LIMIT_ENABLED", true),
 		RateLimitLoginMaxRequests:          getEnvInt("APP_RATE_LIMIT_LOGIN_MAX_REQUESTS", 10),
 		RateLimitLoginWindow:               getEnvDuration("APP_RATE_LIMIT_LOGIN_WINDOW", time.Minute),
@@ -191,4 +196,28 @@ func getCookieSecureMode(key, fallback string) string {
 	default:
 		return fallback
 	}
+}
+
+func getDeploymentMode(key, fallback string) string {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if mode == "" {
+		return fallback
+	}
+	switch mode {
+	case "development", "production":
+		return mode
+	default:
+		return fallback
+	}
+}
+
+func defaultCookieSecureModeForDeployment(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "production") {
+		return "always"
+	}
+	return "auto"
+}
+
+func defaultExpectTLSTerminationForDeployment(mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(mode), "production")
 }

@@ -56,7 +56,7 @@ func TestPointsEndpoint_DefaultQuery(t *testing.T) {
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points", nil)
 	rec := httptest.NewRecorder()
@@ -76,7 +76,7 @@ func TestPointsEndpoint_DefaultQuery(t *testing.T) {
 func TestPointsEndpoint_RangeFiltering(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?from=2026-04-22T11:00:00Z&to=2026-04-22T13:00:00Z", nil)
 	rec := httptest.NewRecorder()
@@ -93,7 +93,7 @@ func TestPointsEndpoint_RangeFiltering(t *testing.T) {
 func TestPointsEndpoint_DeviceFiltering(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=phone-main&limit=20", nil)
 	rec := httptest.NewRecorder()
@@ -113,7 +113,7 @@ func TestPointsEndpoint_DeviceFiltering(t *testing.T) {
 func TestPointsEndpoint_InvalidQueryParams(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	cases := []string{
 		"/api/v1/points?from=not-a-time",
@@ -145,7 +145,7 @@ func TestRecentPointsEndpoint_DefaultLimitAndShape(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent", nil)
 	rec := httptest.NewRecorder()
@@ -173,7 +173,7 @@ func TestRecentPointsEndpoint_DefaultLimitAndShape(t *testing.T) {
 func TestRecentPointsEndpoint_DeviceFilterAndLimit(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=phone-main&limit=7", nil)
 	rec := httptest.NewRecorder()
@@ -193,7 +193,7 @@ func TestRecentPointsEndpoint_DeviceFilterAndLimit(t *testing.T) {
 func TestRecentPointsEndpoint_InvalidLimit(t *testing.T) {
 	pointStore := &fakePointStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{PointStore: pointStore})
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?limit=abc", nil)
 	rec := httptest.NewRecorder()
@@ -219,7 +219,7 @@ func TestRecentPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *te
 	}
 
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -256,7 +256,7 @@ func TestRecentPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t 
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -282,7 +282,7 @@ func TestRecentPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t 
 
 func TestRecentPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   &fakePointStore{},
 		DeviceStore:  &fakeDeviceStore{},
 		UserStore:    &fakeUserStore{users: map[int64]store.User{}},
@@ -312,7 +312,7 @@ func TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -350,7 +350,7 @@ func TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testi
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   pointStore,
 		DeviceStore:  deviceStore,
 		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
@@ -377,7 +377,7 @@ func TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testi
 
 func TestPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		PointStore:   &fakePointStore{},
 		DeviceStore:  &fakeDeviceStore{},
 		UserStore:    &fakeUserStore{users: map[int64]store.User{}},

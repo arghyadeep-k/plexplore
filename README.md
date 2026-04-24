@@ -20,7 +20,7 @@ Also install `sqlite3` CLI (used by the lightweight migration runner).
 make run
 ```
 
-Server defaults to `0.0.0.0:8080`.
+Server defaults to `127.0.0.1:8080`.
 On startup, the service replays spool records newer than checkpoint into RAM
 and performs a recovery flush before serving normal ingest traffic.
 
@@ -52,17 +52,17 @@ Session auth and scoping:
 
 Device API key hygiene:
 - device API keys are stored hashed at rest (`api_key_hash`), not plaintext
-- create and rotate responses include full `api_key` once
+- create and rotate responses include server-generated full `api_key` once
 - list/read responses return only `api_key_preview` (masked)
 - save the returned key at creation/rotation time; it is not recoverable later
 
 Example workflow:
 
 ```bash
-# 1) Create device (full api_key returned once)
+# 1) Create device (server-generated full api_key returned once)
 curl -X POST http://localhost:8080/api/v1/devices \
   -H "Content-Type: application/json" \
-  -d '{"name":"phone-main","source_type":"owntracks","api_key":"dev-key-1"}'
+  -d '{"name":"phone-main","source_type":"owntracks"}'
 
 # 2) List devices (masked api_key_preview only)
 curl -sS http://localhost:8080/api/v1/devices
@@ -70,10 +70,10 @@ curl -sS http://localhost:8080/api/v1/devices
 # 3) Read one device (masked api_key_preview only)
 curl -sS http://localhost:8080/api/v1/devices/1
 
-# 4) Rotate API key (new full api_key returned once)
+# 4) Rotate API key (new server-generated full api_key returned once)
 curl -X POST http://localhost:8080/api/v1/devices/1/rotate-key \
   -H "Content-Type: application/json" \
-  -d '{"api_key":"dev-key-rotated-1"}'
+  -d '{}'
 ```
 
 Assumption for this phase: single-user deployment.
@@ -476,11 +476,12 @@ make run
 ```bash
 curl -X POST http://localhost:8080/api/v1/devices \
   -H "Content-Type: application/json" \
-  -d '{"name":"phone-main","source_type":"owntracks","api_key":"dev-key-1"}'
+  -d '{"name":"phone-main","source_type":"owntracks"}'
 
+# copy returned api_key from previous response and use it below
 curl -X POST http://localhost:8080/api/v1/owntracks \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key-1" \
+  -H "X-API-Key: <returned-device-api-key>" \
   -d '{"_type":"location","lat":41.0,"lon":-87.0,"tst":1713777600}'
 ```
 3. Send graceful signal (replace `<pid>`):
@@ -531,7 +532,11 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - logout actions in UI pages include CSRF hidden token fields
 
 Map page notes:
-- uses Leaflet (CDN-loaded) with OpenStreetMap tiles
+- uses self-hosted Leaflet assets served by Plexplore at:
+- `/ui/assets/leaflet/leaflet.css`
+- `/ui/assets/leaflet/leaflet.js`
+- `/ui/assets/leaflet/images/*` (marker icons/shadow)
+- map tiles still come from OpenStreetMap (`https://{s}.tile.openstreetmap.org/...`)
 - fetches track points from `GET /api/v1/points`
 - renders an ordered track polyline
 - renders lightweight point markers for smaller result sets
@@ -550,6 +555,43 @@ Users page notes:
 - supports the same dark mode toggle behavior used on status/map pages
 
 ## Security Hardening Notes
+
+Baseline browser security headers:
+- `Content-Security-Policy` on HTML pages
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Permissions-Policy: geolocation=(), camera=(), microphone=()`
+
+CSP notes:
+- current UI pages use inline `<style>` and `<script>`, so CSP currently allows `'unsafe-inline'` for styles/scripts to avoid breaking existing lightweight pages
+- CSP still restricts sources to self for most resource classes, with explicit image allowance for OpenStreetMap tile hosts and `data:` marker/icon use
+- this is an intentional transitional compromise until inline code/styles are moved to external static files
+
+Route access model:
+- public routes:
+- `GET /health`
+- `GET /status` (public-safe operational status)
+- `GET /login`
+- `POST /login`
+- `GET /ui/assets/...` (static UI assets)
+- authenticated user routes:
+- `GET /` and `GET /ui/status`
+- `GET /ui/map`
+- `POST /logout`
+- `GET /api/v1/status`
+- `GET/POST /api/v1/devices...`
+- `GET /api/v1/points...`
+- `GET /api/v1/exports/...`
+- `GET /api/v1/visits`
+- `POST /api/v1/visits/generate`
+- admin-only routes:
+- `GET /ui/admin/users`
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+
+Runtime route registration now avoids unauthenticated fallback wiring for protected routes. Test-only fallback route wiring is isolated to internal API test helpers.
 
 - Session cookie:
 - name: `plexplore_session`
@@ -579,14 +621,24 @@ Rate limiting:
 - limited responses return `429` and `Retry-After`
 
 Cookie/proxy knobs:
-- `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto`)
+- `APP_DEPLOYMENT_MODE=development|production` (default `development`)
+- `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto` in development, `always` in production)
 - `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
-- `APP_EXPECT_TLS_TERMINATION=true|false` (default `false`, startup warning aid)
+- `APP_EXPECT_TLS_TERMINATION=true|false` (default `false` in development, `true` in production; startup warning aid)
 
-Secure-cookie behavior:
-- Local HTTP dev: use `APP_COOKIE_SECURE_MODE=never` (or `auto` on plain HTTP, which also yields non-Secure cookies).
-- Direct HTTPS: use `APP_COOKIE_SECURE_MODE=auto` (or `always`) so cookies are marked `Secure`.
-- Reverse proxy TLS termination: keep `APP_COOKIE_SECURE_MODE=auto` and set `APP_TRUST_PROXY_HEADERS=true` so trusted `X-Forwarded-Proto=https` results in `Secure` cookies.
+Deployment guidance:
+- Local development (HTTP):
+- set `APP_DEPLOYMENT_MODE=development`
+- keep default bind `127.0.0.1:8080`
+- use `APP_COOKIE_SECURE_MODE=auto` (or explicitly `never` when needed)
+- Production behind HTTPS reverse proxy:
+- set `APP_DEPLOYMENT_MODE=production`
+- prefer app bind to loopback/internal interface only
+- keep `APP_COOKIE_SECURE_MODE=always` (recommended) or `auto` + `APP_TRUST_PROXY_HEADERS=true`
+- set `APP_EXPECT_TLS_TERMINATION=true`
+- do not enable proxy header trust unless traffic is actually coming from your trusted reverse proxy
+- Production TLS-backed cookies:
+- `APP_COOKIE_SECURE_MODE=always` is the safest default and does not rely on forwarded headers.
 
 The service logs a startup warning for risky combinations (for example public bind with non-`always` cookie mode, or expected TLS termination without trusted proxy headers).
 
@@ -655,7 +707,9 @@ Run container:
 docker run --rm \
   -p 8080:8080 \
   -v "$(pwd)/data:/data" \
+  -e APP_DEPLOYMENT_MODE=development \
   -e APP_HTTP_LISTEN_ADDR=0.0.0.0:8080 \
+  -e APP_COOKIE_SECURE_MODE=auto \
   -e APP_SQLITE_PATH=/data/plexplore.db \
   -e APP_SPOOL_DIR=/data/spool \
   plexplore:dev
@@ -671,7 +725,8 @@ docker compose down
 ```
 
 Environment variables commonly used in containers:
-- `APP_HTTP_LISTEN_ADDR` (default in image: `0.0.0.0:8080`)
+- `APP_DEPLOYMENT_MODE` (default in image: `development`)
+- `APP_HTTP_LISTEN_ADDR` (default in image: `127.0.0.1:8080`)
 - `APP_SQLITE_PATH` (default in image: `/data/plexplore.db`)
 - `APP_SPOOL_DIR` (default in image: `/data/spool`)
 - `APP_MIGRATIONS_DIR` (default in image: `/app/migrations`)
@@ -701,7 +756,8 @@ Raspberry Pi Zero 2 W caveats:
 
 ## Environment Variables
 
-- `APP_HTTP_LISTEN_ADDR` (default: `0.0.0.0:8080`): HTTP bind address.
+- `APP_DEPLOYMENT_MODE` (default: `development`): deployment profile (`development` or `production`) used for safer cookie/TLS defaults.
+- `APP_HTTP_LISTEN_ADDR` (default: `127.0.0.1:8080`): HTTP bind address.
 - `APP_SQLITE_PATH` (default: `./data/plexplore.db`): SQLite database file path.
 - `APP_MIGRATIONS_DIR` (default: `./migrations`): SQL migration files directory.
 - `APP_SPOOL_DIR` (default: `./data/spool`): directory for segmented spool files.
@@ -715,9 +771,9 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_FLUSH_BATCH_SIZE` (default: `128`): max points per flush batch.
 - `APP_FLUSH_TRIGGER_POINTS` (default: `75%` of `APP_BUFFER_MAX_POINTS`): best-effort ingest-path flush trigger when buffered points reaches threshold.
 - `APP_FLUSH_TRIGGER_BYTES` (default: `75%` of `APP_BUFFER_MAX_BYTES`): best-effort ingest-path flush trigger when buffered bytes reaches threshold.
-- `APP_COOKIE_SECURE_MODE` (default: `auto`): cookie `Secure` policy (`auto`, `always`, `never`).
+- `APP_COOKIE_SECURE_MODE` (default: `auto` in development, `always` in production): cookie `Secure` policy (`auto`, `always`, `never`).
 - `APP_TRUST_PROXY_HEADERS` (default: `false`): allow trusted `X-Forwarded-Proto` to influence cookie `Secure` behavior.
-- `APP_EXPECT_TLS_TERMINATION` (default: `false`): deployment hint used for startup warnings when proxy/TLS settings look inconsistent.
+- `APP_EXPECT_TLS_TERMINATION` (default: `false` in development, `true` in production): deployment hint used for startup warnings when proxy/TLS settings look inconsistent.
 - `APP_RATE_LIMIT_ENABLED` (default: `true`): enable auth/admin in-process route limiting.
 - `APP_RATE_LIMIT_LOGIN_MAX_REQUESTS` (default: `10`): allowed `POST /login` attempts per window per client IP.
 - `APP_RATE_LIMIT_LOGIN_WINDOW` (default: `1m`): login limiter window duration.
@@ -797,5 +853,5 @@ SQLite pragmas applied by migration runner (Pi-friendly defaults):
 - Overland ingestion currently expects `locations[].coordinates` in `[lon, lat]` order.
   GeoJSON-style `geometry.coordinates` payloads are not yet supported and return 400.
 
-- Device API returns full `api_key` only on create/rotate responses.
+- Device API returns server-generated full `api_key` only on create/rotate responses.
   List/read responses return masked `api_key_preview`.

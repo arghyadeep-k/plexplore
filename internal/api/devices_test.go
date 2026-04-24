@@ -78,7 +78,7 @@ func (f *fakeDeviceStore) RotateDeviceAPIKey(_ context.Context, id int64, newAPI
 func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
+	registerRoutesWithTestFallbacks(mux, Dependencies{DeviceStore: ds})
 
 	body := []byte(`{"name":"phone","source_type":"owntracks","api_key":"abc123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
@@ -93,8 +93,14 @@ func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal create response failed: %v", err)
 	}
-	if created.APIKey != "abc123" {
-		t.Fatalf("expected full api key in create response, got %q", created.APIKey)
+	if created.APIKey == "" {
+		t.Fatalf("expected generated api key in create response, got empty")
+	}
+	if created.APIKey == "abc123" {
+		t.Fatalf("expected user-supplied api_key to be ignored, got %q", created.APIKey)
+	}
+	if len(created.APIKey) < 64 {
+		t.Fatalf("expected high-entropy generated key length, got %d", len(created.APIKey))
 	}
 	if created.APIKeyPreview == "" {
 		t.Fatalf("expected api key preview in create response, got %+v", created)
@@ -120,7 +126,7 @@ func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 	if resp.Devices[0].APIKeyPreview == "" {
 		t.Fatalf("expected masked api key preview, got %+v", resp.Devices[0])
 	}
-	if resp.Devices[0].APIKeyPreview == "abc123" {
+	if resp.Devices[0].APIKeyPreview == "abc123" || resp.Devices[0].APIKeyPreview == created.APIKey {
 		t.Fatalf("expected list response key to be masked, got %q", resp.Devices[0].APIKeyPreview)
 	}
 }
@@ -128,7 +134,7 @@ func TestDevicesAPI_CreateReturnsFullKeyAndListMasksKey(t *testing.T) {
 func TestDevicesAPI_GetMasksKey(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
+	registerRoutesWithTestFallbacks(mux, Dependencies{DeviceStore: ds})
 
 	body := []byte(`{"name":"phone","source_type":"owntracks","api_key":"abc123"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
@@ -158,7 +164,7 @@ func TestDevicesAPI_GetMasksKey(t *testing.T) {
 func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{DeviceStore: ds})
+	registerRoutesWithTestFallbacks(mux, Dependencies{DeviceStore: ds})
 
 	createBody := []byte(`{"name":"phone","source_type":"owntracks","api_key":"old-key"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(createBody))
@@ -167,6 +173,14 @@ func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
 	mux.ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	var created deviceSecretResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create response failed: %v", err)
+	}
+	if created.APIKey == "" {
+		t.Fatalf("expected generated key on create")
 	}
 
 	rotateBody := []byte(`{"api_key":"new-key"}`)
@@ -182,14 +196,20 @@ func TestDevicesAPI_RotateKeyInvalidatesOldKeyAndReturnsNewKey(t *testing.T) {
 	if err := json.Unmarshal(rotateRec.Body.Bytes(), &rotated); err != nil {
 		t.Fatalf("unmarshal rotate response failed: %v", err)
 	}
-	if rotated.APIKey != "new-key" {
-		t.Fatalf("expected rotated full key new-key, got %q", rotated.APIKey)
+	if rotated.APIKey == "" {
+		t.Fatalf("expected generated rotated key")
+	}
+	if rotated.APIKey == "new-key" {
+		t.Fatalf("expected user-supplied rotate api_key to be ignored, got %q", rotated.APIKey)
+	}
+	if rotated.APIKey == created.APIKey {
+		t.Fatalf("expected rotated key to differ from old key")
 	}
 
-	if _, err := ds.GetDeviceByAPIKey(context.Background(), "old-key"); !errors.Is(err, store.ErrDeviceNotFound) {
+	if _, err := ds.GetDeviceByAPIKey(context.Background(), created.APIKey); !errors.Is(err, store.ErrDeviceNotFound) {
 		t.Fatalf("expected old key to be invalidated, got err=%v", err)
 	}
-	loaded, err := ds.GetDeviceByAPIKey(context.Background(), "new-key")
+	loaded, err := ds.GetDeviceByAPIKey(context.Background(), rotated.APIKey)
 	if err != nil {
 		t.Fatalf("expected new key lookup success, got %v", err)
 	}
@@ -256,7 +276,7 @@ func TestDevicesAPI_UserSeesOnlyOwnDevices_WhenSessionAuthEnabled(t *testing.T) 
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
@@ -289,7 +309,7 @@ func TestDevicesAPI_UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled(t *
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
@@ -310,7 +330,7 @@ func TestDevicesAPI_UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled(t *
 func TestDevicesAPI_AdminSensitiveWritesRateLimited(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
@@ -349,7 +369,7 @@ func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing
 		},
 	}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
@@ -371,7 +391,7 @@ func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing
 func TestDevicesAPI_CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com", IsAdmin: false}}},
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
@@ -396,7 +416,7 @@ func TestDevicesAPI_CreateForAnotherUserDeniedForNonAdmin_WhenSessionAuthEnabled
 func TestDevicesAPI_AdminCanCreateForSpecificUser_WhenSessionAuthEnabled(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
-	RegisterRoutesWithDependencies(mux, Dependencies{
+	registerRoutesWithTestFallbacks(mux, Dependencies{
 		DeviceStore: ds,
 		UserStore: &fakeUserStore{users: map[int64]store.User{
 			1: {ID: 1, Email: "admin@example.com", IsAdmin: true},

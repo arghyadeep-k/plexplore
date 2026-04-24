@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -99,8 +98,13 @@ func RegisterRoutes(mux *http.ServeMux) {
 
 func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("GET /health", healthHandler)
-	registerUIRoutes(mux, deps)
-	if deps.DeviceStore != nil {
+	registerUIAssetRoutes(mux)
+	if deps.UserStore != nil && deps.SessionStore != nil {
+		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity, deps.RateLimiters)
+		registerUserRoutes(mux, deps.UserStore, deps.SessionStore, deps.RateLimiters)
+		registerUIRoutes(mux, deps)
+	}
+	if deps.DeviceStore != nil && deps.UserStore != nil && deps.SessionStore != nil {
 		registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore, deps.RateLimiters)
 	}
 	if deps.DeviceStore != nil && deps.Spool != nil && deps.Buffer != nil {
@@ -109,27 +113,19 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 	if deps.Spool != nil && deps.Buffer != nil {
 		registerStatusRoutes(mux, deps)
 	}
-	if deps.PointStore != nil {
+	if deps.PointStore != nil && deps.DeviceStore != nil && deps.UserStore != nil && deps.SessionStore != nil {
 		registerPointRoutes(mux, deps)
 		registerExportRoutes(mux, deps)
 	}
-	if deps.VisitStore != nil {
+	if deps.VisitStore != nil && deps.DeviceStore != nil && deps.UserStore != nil && deps.SessionStore != nil {
 		registerVisitRoutes(mux, deps)
-	}
-	if deps.UserStore != nil && deps.SessionStore != nil {
-		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity, deps.RateLimiters)
-		registerUserRoutes(mux, deps.UserStore, deps.SessionStore, deps.RateLimiters)
 	}
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	resp := healthResponse{
 		Status:  "ok",
 		Service: "plexplore",
 	}
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-	}
+	writeJSON(w, http.StatusOK, resp)
 }
