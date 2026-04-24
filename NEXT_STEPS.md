@@ -1,15 +1,18 @@
 # Next Steps
 
 ## Current milestone
-Route helper hardening complete (shared protected route helpers are fail-closed; permissive wiring is test-only)
+Production proxy hardening docs expanded (HSTS guidance + reverse proxy examples in README)
 
 ## Next 3 tasks
-1. Add package-level documentation for route helper dependency contracts to reduce accidental misuse in future entrypoints
-2. Add an optional `compose.dev.yaml` with explicit insecure local settings to keep production compose clean by default
-3. Move inline UI scripts/styles into local static files so CSP can remove `'unsafe-inline'`
+1. Validate production reverse-proxy headers in staging (HSTS + forwarded proto + cookie behavior)
+2. Add package-level documentation for route helper dependency contracts to reduce accidental misuse in future entrypoints
+3. Add an optional `compose.dev.yaml` with explicit insecure local settings to keep production compose clean by default
 
 ## Commands
 - `go test ./...`
+- `curl -I https://your-domain.example`
+- `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
+- `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`
 - `go test ./internal/config -count=1`
 - `go test ./cmd/server -count=1`
 - `go test ./internal/api -run 'TestRuntimeRouter_' -count=1`
@@ -110,6 +113,7 @@ Leaflet map assets are now self-hosted under `/ui/assets/leaflet/*`; CDN referen
 Baseline browser security headers are now applied, with CSP currently allowing `'unsafe-inline'` on HTML pages to preserve existing inline UI scripts/styles.
 Runtime routing now does not register protected UI/API routes when auth dependencies are missing; legacy fallback wiring is test-only (`registerRoutesWithTestFallbacks`).
 Shared protected route helpers now panic on missing required auth deps to enforce fail-closed registration in future entrypoints.
+HSTS is now documented as reverse-proxy responsibility for production TLS deployments; local HTTP dev should not use HSTS.
 Insecure local HTTP mode now requires explicit `APP_ALLOW_INSECURE_HTTP=true` when `APP_COOKIE_SECURE_MODE=never`.
 Production mode now fails fast unless `APP_COOKIE_SECURE_MODE=always`, and rejects `APP_ALLOW_INSECURE_HTTP=true`.
 On transient SQLite failure, keep drained records by requeueing them to the RAM buffer front.

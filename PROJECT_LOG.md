@@ -2296,6 +2296,45 @@ Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
+### 2026-04-24 06:12 UTC - Phase 83 (Reverse Proxy HSTS Documentation + Examples)
+Implemented:
+- Added production reverse-proxy HSTS guidance to README.
+- Documented that HSTS should be configured at the TLS-terminating reverse proxy layer (not in-app, unless app directly terminates HTTPS in the future).
+- Added conservative HSTS recommendation:
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- Explicitly documented:
+- do not enable HSTS for local HTTP development
+- do not use `preload` by default
+- use preload only when all subdomains are permanently HTTPS-only and operator understands implications
+- Added minimal practical proxy configuration examples directly in README:
+- Caddy site block with HSTS and reverse proxy to app
+- nginx server block with HSTS, proxy headers, and `X-Forwarded-Proto https`
+- Aligned docs with current cookie/TLS production settings and explicit insecure dev mode behavior.
+
+Architectural decisions:
+- Decision: Keep HSTS enforcement at reverse proxy layer for current architecture.
+  Reason: App currently serves HTTP behind TLS-terminating proxy in production; proxy is the correct TLS/HSTS boundary.
+
+Files changed:
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `curl -I https://your-domain.example`
+- `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
+- `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`
+- `curl -I https://your-domain.example | rg -i 'set-cookie|strict-transport-security|x-frame-options|content-security-policy'`
+
+Pending:
+- Optional: add dedicated reverse-proxy example files under `deploy/proxy/` when writable environment permits.
+- Optional: add Traefik example labels/snippet for operators using container-native proxy stacks.
+
+Known issues:
+- CSP currently still allows `'unsafe-inline'` for scripts/styles to preserve existing inline UI behavior.
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
 ### 2026-04-24 06:03 UTC - Phase 82 (Shared Route Helper Fail-Closed Hardening)
 Implemented:
 - Removed remaining permissive fallback behavior from shared protected route helper functions.

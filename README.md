@@ -642,6 +642,68 @@ Deployment guidance:
 - Production TLS-backed cookies:
 - `APP_COOKIE_SECURE_MODE=always` is the safest default and does not rely on forwarded headers.
 
+### Reverse Proxy TLS + HSTS (Production)
+
+In production, TLS should terminate at the reverse proxy. HSTS should be set at
+that reverse proxy layer, not in the app.
+
+- Plexplore app:
+- listen on localhost/private network only
+- keep `APP_DEPLOYMENT_MODE=production`
+- keep `APP_COOKIE_SECURE_MODE=always`
+- keep `APP_EXPECT_TLS_TERMINATION=true`
+- keep `APP_TRUST_PROXY_HEADERS=false` unless you explicitly need trusted forwarded proto behavior
+- Reverse proxy:
+- terminate HTTPS
+- forward traffic to Plexplore over localhost/private network
+- set `Strict-Transport-Security` header
+- set `X-Forwarded-Proto https` only if you intentionally enable proxy header trust in app config
+
+Conservative HSTS example value:
+
+```text
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+Do not enable HSTS for local HTTP development.
+Do not add `preload` by default. Use preload only if you understand the impact
+and every subdomain is permanently HTTPS-only.
+
+Minimal Caddy example:
+
+```caddyfile
+plexplore.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+```
+
+Minimal nginx example:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name plexplore.example.com;
+
+    # TLS config omitted for brevity (ssl_certificate, ssl_certificate_key, etc.)
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
 The service logs a startup warning for risky combinations (for example public bind with non-`always` cookie mode, or expected TLS termination without trusted proxy headers).
 The server now fails fast on unsafe cookie/runtime combinations:
 - `APP_COOKIE_SECURE_MODE=never` requires `APP_ALLOW_INSECURE_HTTP=true`
@@ -740,6 +802,10 @@ docker run --rm \
   -e APP_SPOOL_DIR=/data/spool \
   plexplore:latest
 ```
+
+Local development note:
+- use HTTP without HSTS
+- use explicit insecure mode only when needed (`APP_COOKIE_SECURE_MODE=never` + `APP_ALLOW_INSECURE_HTTP=true`)
 
 The container entrypoint runs migrations first, then starts the server.
 The image defaults are production-oriented (`APP_DEPLOYMENT_MODE=production`, secure cookies enabled, insecure HTTP disabled).
