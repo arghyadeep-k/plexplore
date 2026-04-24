@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Current milestone
-Production-hardening tranche complete for CSP inline removal, migration robustness, and privacy-first map tile configuration
+Operational backup/restore workflow complete (SQLite + spool/checkpoint scripts and docs)
 
 ## Next 3 tasks
-1. Add authenticated browser smoke test coverage for `/login` -> `/ui/map` to validate page assets and map filtering workflow end-to-end
+1. Add authenticated browser smoke test coverage for `/login` -> `/ui/admin/devices` and validate create/rotate/generate actions with CSRF flow
 2. Tighten CSP `img-src` dynamically by tile mode (for example strict `'self' data:` in `APP_MAP_TILE_MODE=none`)
 3. Add a regression migration fixture for `0005_users_auth_fields.sql` partial-state recovery (columns present, migration row missing)
 
@@ -13,6 +13,9 @@ Production-hardening tranche complete for CSP inline removal, migration robustne
 - `go test ./internal/api`
 - `gofmt -w internal/api/*.go internal/tasks/*.go cmd/migrate/*.go`
 - `timeout 6s go run ./cmd/server`
+- `bash -n scripts/backup.sh scripts/restore.sh`
+- `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir ./backups`
+- `scripts/restore.sh --archive ./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz --sqlite-path ./data/plexplore.db --spool-dir ./data/spool`
 - `curl -I https://your-domain.example`
 - `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
 - `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`

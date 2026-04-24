@@ -338,6 +338,41 @@ func TestDevicesAPI_UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled(t *
 	}
 }
 
+func TestDevicesAPI_AdminSeesAllDevices_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 10, Name: "u10-phone", SourceType: "owntracks", APIKey: "k10", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 2, UserID: 11, Name: "u11-phone", SourceType: "owntracks", APIKey: "k11", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore: &fakeUserStore{users: map[int64]store.User{
+			1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+		}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-admin": {Token: "token-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-admin"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp listDevicesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal list response failed: %v", err)
+	}
+	if len(resp.Devices) != 2 {
+		t.Fatalf("expected admin to see all devices, got %+v", resp.Devices)
+	}
+}
+
 func TestDevicesAPI_AdminSensitiveWritesRateLimited(t *testing.T) {
 	ds := &fakeDeviceStore{}
 	mux := http.NewServeMux()
@@ -399,6 +434,35 @@ func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for non-owner key rotation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDevicesAPI_AdminCanRotateAnotherUsersDevice_WhenSessionAuthEnabled(t *testing.T) {
+	ds := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 1, UserID: 11, Name: "u11-phone", SourceType: "owntracks", APIKey: "old-key", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore: &fakeUserStore{users: map[int64]store.User{
+			1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+		}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-admin": {Token: "token-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices/1/rotate-key", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-admin"})
+	addCSRF(req, testCSRFToken)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin rotate, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

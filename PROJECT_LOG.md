@@ -3955,3 +3955,114 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 16:31 UTC - Phase 82 (Admin Device UI + Key Rotation + Visit Generation)
+Implemented:
+- Added a new admin-only devices management UI page at `GET /ui/admin/devices`.
+- Added lightweight browser workflows for:
+- listing devices with `id`, `name`, `owner/user`, `created_at`, `updated_at`, and masked `api_key_preview`
+- creating devices with selectable owner and source type
+- rotating API keys per device with one-time plaintext key display and copy button
+- triggering visit generation for one device or all listed devices with optional date range
+- Reused existing backend APIs and CSRF/session patterns (`X-CSRF-Token` from page meta).
+- Added a clear UI note that delete/disable is not available because backend endpoints do not exist.
+- Updated top navigation for admin users:
+- status/map pages now show both `Devices` and `Users` admin links
+- users page now includes a `Devices` link
+- Expanded UI and router security tests:
+- admin devices page render coverage
+- non-admin denial for `/ui/admin/devices`
+- route protection checks include `/ui/admin/devices`
+- devices asset test verifies rotate/generate workflow hooks and CSRF header usage
+- Expanded API tests so admin users can list all devices and rotate keys across owners, while non-admin ownership restrictions remain.
+- Updated README with new admin devices UI workflow documentation and CSRF coverage list.
+
+Architectural decisions:
+- Decision: Implement admin device management as a dedicated admin-only UI page (`/ui/admin/devices`) instead of mixing the workflow into status/map pages.
+  Reason: Keeps existing pages lightweight/read-only and isolates privileged write actions in one explicit admin screen.
+- Decision: Reuse existing device/visit APIs rather than introducing new admin-specific endpoints.
+  Reason: Minimal change, lower maintenance overhead, and preserves current auth/CSRF behavior.
+
+Files changed:
+- `internal/api/ui.go`
+- `internal/api/devices.go`
+- `internal/api/ui_test.go`
+- `internal/api/router_security_test.go`
+- `internal/api/devices_test.go`
+- `internal/api/assets/app/devices.js`
+- `internal/api/assets/app/devices.css`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/ui.go internal/api/ui_test.go internal/api/router_security_test.go internal/api/devices.go internal/api/devices_test.go`
+- `go test ./internal/api`
+- `go test ./...`
+- `timeout 6s go run ./cmd/server`
+
+Pending:
+- Add authenticated browser smoke test that covers login -> `/ui/admin/devices` and validates create/rotate/generate UI actions with CSRF token flow end-to-end.
+- Consider adding backend support for device disable/delete if operational requirements need key revocation without rotation.
+- Keep previously tracked hardening follow-ups: dynamic CSP `img-src` by tile mode and explicit migration fixture for `0005` partial-state recovery.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 16:58 UTC - Phase 83 (Backup/Restore Workflow for SQLite + Spool)
+Implemented:
+- Added practical backup and restore scripts:
+- `scripts/backup.sh` for timestamped archive creation
+- `scripts/restore.sh` for safe restore with pre-restore safety copy
+- Backup script supports:
+- online-safe DB snapshot mode using `sqlite3 .backup` (default)
+- offline mode (`--offline`) for stopped-service file copy
+- optional no-compression output (`--no-compress`)
+- configurable sqlite/spool/output paths via flags and existing env defaults
+- Restore script supports:
+- required archive input
+- explicit stop-service warning
+- restore to configurable sqlite/spool targets
+- automatic pre-restore snapshot of existing target files
+- forced non-interactive restore mode (`--force`)
+- Updated README with:
+- online backup workflow
+- offline backup workflow
+- restore workflow
+- retention guidance
+- cron and systemd timer automation examples
+- relevant config/env path references (`APP_SQLITE_PATH`, `APP_SPOOL_DIR`)
+- Validated end-to-end in isolated temp paths:
+- created online backup archive from current runtime data
+- restored into temp sqlite/spool target
+- started server successfully using restored data paths
+
+Architectural decisions:
+- Decision: Use shell scripts + tar archives and SQLite `.backup` instead of adding in-app backup endpoints or dependencies.
+  Reason: Keeps the solution simple, low-overhead, and aligned with single-process Raspberry Pi operations.
+- Decision: Restore always takes a pre-restore safety copy.
+  Reason: Reduces operator risk during manual disaster-recovery operations.
+
+Files changed:
+- `scripts/backup.sh`
+- `scripts/restore.sh`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `bash -n scripts/backup.sh scripts/restore.sh`
+- `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir /tmp/plexplore-backup-test/backups`
+- `scripts/restore.sh --archive /tmp/plexplore-backup-test/backups/plexplore-backup-20260424-165232.tar.gz --sqlite-path /tmp/plexplore-backup-test/restore-data/plexplore-restored.db --spool-dir /tmp/plexplore-backup-test/restore-data/spool --force`
+- `/bin/bash -lc "APP_SQLITE_PATH=/tmp/plexplore-backup-test/restore-data/plexplore-restored.db APP_SPOOL_DIR=/tmp/plexplore-backup-test/restore-data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18090 timeout 6s go run ./cmd/server"`
+- `go test ./...`
+
+Pending:
+- Add optional prune helper for retention (for example keep last N daily archives) to reduce manual cleanup.
+- Add one restore drill checklist section for operators (post-restore `make migrate`, `/health`, `/status`, and quick ingest test).
+- Keep previously tracked hardening follow-ups: authenticated UI smoke test, dynamic CSP `img-src` by tile mode, and migration fixture for `0005` partial state.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

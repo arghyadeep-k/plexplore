@@ -34,6 +34,7 @@ func TestRuntimeRouter_NoUnauthFallbackProtectedRoutes(t *testing.T) {
 		"/ui/status",
 		"/ui/map",
 		"/ui/admin/users",
+		"/ui/admin/devices",
 		"/api/v1/devices",
 		"/api/v1/points",
 		"/api/v1/exports/geojson",
@@ -97,7 +98,7 @@ func TestRuntimeRouter_ProtectedRoutesDenyAnonymous(t *testing.T) {
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
 	})
 
-	htmlProtected := []string{"/", "/ui/status", "/ui/map", "/ui/admin/users"}
+	htmlProtected := []string{"/", "/ui/status", "/ui/map", "/ui/admin/users", "/ui/admin/devices"}
 	for _, path := range htmlProtected {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
@@ -193,6 +194,14 @@ func TestRuntimeRouter_AdminRoutesRejectNonAdmin(t *testing.T) {
 	mux.ServeHTTP(uiRec, uiReq)
 	if uiRec.Code != http.StatusForbidden {
 		t.Fatalf("expected non-admin forbidden for /ui/admin/users, got %d body=%s", uiRec.Code, uiRec.Body.String())
+	}
+
+	uiDevicesReq := httptest.NewRequest(http.MethodGet, "/ui/admin/devices", nil)
+	uiDevicesReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-user"})
+	uiDevicesRec := httptest.NewRecorder()
+	mux.ServeHTTP(uiDevicesRec, uiDevicesReq)
+	if uiDevicesRec.Code != http.StatusForbidden {
+		t.Fatalf("expected non-admin forbidden for /ui/admin/devices, got %d body=%s", uiDevicesRec.Code, uiDevicesRec.Body.String())
 	}
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)

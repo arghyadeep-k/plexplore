@@ -164,7 +164,7 @@ func listDevicesHandler(deviceStore DeviceStore) http.HandlerFunc {
 
 		out := make([]devicePublicResponse, 0, len(devices))
 		for _, d := range devices {
-			if hasCurrentUser && d.UserID != currentUser.ID {
+			if hasCurrentUser && !currentUser.IsAdmin && d.UserID != currentUser.ID {
 				continue
 			}
 			out = append(out, devicePublicResponseFromStore(d))
@@ -192,7 +192,7 @@ func getDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if hasCurrentUser && device.UserID != currentUser.ID {
+		if hasCurrentUser && !currentUser.IsAdmin && device.UserID != currentUser.ID {
 			writeJSONError(w, http.StatusNotFound, "device not found")
 			return
 		}
@@ -224,7 +224,7 @@ func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if hasCurrentUser && device.UserID != currentUser.ID {
+		if hasCurrentUser && !currentUser.IsAdmin && device.UserID != currentUser.ID {
 			writeJSONError(w, http.StatusForbidden, "forbidden")
 			return
 		}

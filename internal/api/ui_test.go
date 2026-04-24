@@ -92,7 +92,7 @@ func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/ui/statu", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ui/devic", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -406,8 +406,14 @@ func TestStatusPage_AdminLinkStillRendersForAdminSession(t *testing.T) {
 	if !strings.Contains(body, `id="admin_users_link"`) || !strings.Contains(body, `href="/ui/admin/users"`) {
 		t.Fatalf("expected existing admin users nav link on status page, got %q", body)
 	}
+	if !strings.Contains(body, `id="admin_devices_link"`) || !strings.Contains(body, `href="/ui/admin/devices"`) {
+		t.Fatalf("expected devices nav link on status page, got %q", body)
+	}
 	if !strings.Contains(body, ">Users</a>") {
 		t.Fatalf("expected Users nav label on status page, got %q", body)
+	}
+	if !strings.Contains(body, ">Devices</a>") {
+		t.Fatalf("expected Devices nav label on status page, got %q", body)
 	}
 }
 
@@ -438,8 +444,14 @@ func TestMapPage_AdminLinkLabelIsUsersForAdminSession(t *testing.T) {
 	if !strings.Contains(body, `id="admin_users_link"`) || !strings.Contains(body, `href="/ui/admin/users"`) {
 		t.Fatalf("expected users nav link on map page, got %q", body)
 	}
+	if !strings.Contains(body, `id="admin_devices_link"`) || !strings.Contains(body, `href="/ui/admin/devices"`) {
+		t.Fatalf("expected devices nav link on map page, got %q", body)
+	}
 	if !strings.Contains(body, ">Users</a>") {
 		t.Fatalf("expected Users nav label on map page, got %q", body)
+	}
+	if !strings.Contains(body, ">Devices</a>") {
+		t.Fatalf("expected Devices nav label on map page, got %q", body)
 	}
 }
 
@@ -465,5 +477,94 @@ func TestAdminUsersPageDeniedForNonAdminSession(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for non-admin on admin users page, got %d", rec.Code)
+	}
+}
+
+func TestAdminDevicesPageServedForAdminSession(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "admin@example.com", IsAdmin: true},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-admin": {Token: "tok-admin", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/admin/devices", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-admin"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin devices page, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "<title>Plexplore Devices</title>") || !strings.Contains(body, "<h1>Devices</h1>") {
+		t.Fatalf("expected devices page title/heading in body, got %q", body)
+	}
+	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/devices.js`) {
+		t.Fatalf("expected external devices/common scripts in admin devices page, got %q", body)
+	}
+	if !strings.Contains(body, `id="admin_users_link"`) || !strings.Contains(body, `href="/ui/admin/users"`) {
+		t.Fatalf("expected users nav link on devices page, got %q", body)
+	}
+	if !strings.Contains(body, `id="create_device_btn"`) || !strings.Contains(body, `id="generate_visits_btn"`) {
+		t.Fatalf("expected create and generate controls in devices page, got %q", body)
+	}
+	if !strings.Contains(body, `id="theme_toggle"`) {
+		t.Fatalf("expected theme toggle on devices page, got %q", body)
+	}
+}
+
+func TestAdminDevicesPageDeniedForNonAdminSession(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				2: {ID: 2, Email: "user@example.com", IsAdmin: false},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-user": {Token: "tok-user", UserID: 2, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/admin/devices", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-user"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin on admin devices page, got %d", rec.Code)
+	}
+}
+
+func TestUIAssets_DevicesScriptContainsDeviceAndVisitWorkflows(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/assets/app/devices.js", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for devices js asset, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "/api/v1/devices") || !strings.Contains(body, "/rotate-key") {
+		t.Fatalf("expected device list/rotate workflow in devices js, got %q", body)
+	}
+	if !strings.Contains(body, "/api/v1/visits/generate") {
+		t.Fatalf("expected visit generation workflow in devices js, got %q", body)
+	}
+	if !strings.Contains(body, "X-CSRF-Token") {
+		t.Fatalf("expected csrf header usage in devices js, got %q", body)
 	}
 }

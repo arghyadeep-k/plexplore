@@ -511,6 +511,125 @@ Notes:
 - if checkpoint is stale, replay may attempt already-committed rows; SQLite `ingest_hash` uniqueness prevents duplicate `raw_points` rows
 - after crash/power loss, recovery replays uncheckpointed spool data on next startup
 
+## Backup and Restore (SQLite + Spool/Checkpoint)
+
+Plexplore durability depends on both:
+- SQLite DB file (`APP_SQLITE_PATH`, default `./data/plexplore.db`)
+- spool state (`APP_SPOOL_DIR`, default `./data/spool`) including checkpoint/segment files
+
+Use the provided scripts:
+- `scripts/backup.sh`
+- `scripts/restore.sh`
+
+### Online backup (service running)
+
+Uses SQLite `.backup` for a consistent DB snapshot plus spool copy:
+
+```bash
+scripts/backup.sh \
+  --sqlite-path ./data/plexplore.db \
+  --spool-dir ./data/spool \
+  --output-dir ./backups
+```
+
+Default output is timestamped and compressed:
+- `./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz`
+
+### Offline backup (service stopped)
+
+Recommended before upgrades or major restores:
+
+```bash
+# stop service first (example)
+docker compose stop plexplore
+
+scripts/backup.sh \
+  --offline \
+  --sqlite-path ./data/plexplore.db \
+  --spool-dir ./data/spool \
+  --output-dir ./backups
+```
+
+Optional uncompressed archive:
+
+```bash
+scripts/backup.sh --offline --no-compress
+```
+
+### Restore workflow
+
+1. Stop Plexplore first.
+2. Restore archive to configured DB/spool paths.
+3. Start Plexplore and verify `/health`.
+
+```bash
+# stop service first (examples)
+docker compose stop plexplore
+# or: sudo systemctl stop plexplore
+
+scripts/restore.sh \
+  --archive ./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz \
+  --sqlite-path ./data/plexplore.db \
+  --spool-dir ./data/spool
+
+# start again
+docker compose start plexplore
+# or: sudo systemctl start plexplore
+```
+
+Restore script behavior:
+- prints explicit stop-service warning
+- takes a pre-restore safety copy of current DB/spool
+- restores SQLite file plus spool/checkpoint content
+- reminds about service file permissions
+
+### Retention suggestions
+
+- Keep at least:
+- last 7 daily backups
+- last 4 weekly backups
+- last 3 monthly backups
+- Test restore monthly on a throwaway directory/host.
+
+### Automation examples
+
+Cron (daily 03:15 UTC):
+
+```cron
+15 3 * * * cd /opt/plexplore && ./scripts/backup.sh --output-dir /opt/plexplore/backups >> /var/log/plexplore-backup.log 2>&1
+```
+
+systemd oneshot + timer example:
+
+```ini
+# /etc/systemd/system/plexplore-backup.service
+[Unit]
+Description=Plexplore backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/plexplore
+ExecStart=/opt/plexplore/scripts/backup.sh --output-dir /opt/plexplore/backups
+```
+
+```ini
+# /etc/systemd/system/plexplore-backup.timer
+[Unit]
+Description=Run Plexplore backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now plexplore-backup.timer
+```
+
 ## Minimal Web UI
 
 - `GET /` serves a lightweight status page.
@@ -529,6 +648,7 @@ endpoints (`/health`, `/api/v1/status`, `/api/v1/devices`, `/api/v1/points/recen
 - dark mode toggle (sun/moon) with localStorage persistence and system-preference fallback
 - signed-in user email indicator and logout control in the top bar (session-aware UI)
 - admin-only user management page at `GET /ui/admin/users` (shown as "Users" in UI) for listing users and creating admin-created accounts
+- admin-only device management page at `GET /ui/admin/devices` for device create/list, key rotation, and visit generation workflows
 - logout actions in UI pages include CSRF hidden token fields
 
 Map page notes:
@@ -558,6 +678,15 @@ Users page notes:
 - creates users with CSRF header (`X-CSRF-Token`) derived from current UI session
 - no public self-signup is introduced
 - supports the same dark mode toggle behavior used on status/map pages
+
+Devices page notes:
+- route: `GET /ui/admin/devices` (admin session required)
+- lists devices via `GET /api/v1/devices` with owner, created/updated times, and `api_key_preview`
+- creates devices via `POST /api/v1/devices` (owner/user selectable by admin)
+- rotates keys via `POST /api/v1/devices/{id}/rotate-key` and displays the plaintext key once for immediate capture
+- triggers visit generation via `POST /api/v1/visits/generate` for a selected device or all listed devices
+- write actions include CSRF header (`X-CSRF-Token`) from the active session page
+- delete/disable actions are intentionally not shown because backend delete/disable endpoints are not available
 
 ## Security Hardening Notes
 
@@ -594,6 +723,7 @@ Route access model:
 - `POST /api/v1/visits/generate`
 - admin-only routes:
 - `GET /ui/admin/users`
+- `GET /ui/admin/devices`
 - `GET /api/v1/users`
 - `POST /api/v1/users`
 
@@ -610,6 +740,9 @@ Shared protected route helper functions now fail closed (panic on missing requir
 - `POST /login`
 - `POST /logout`
 - `POST /api/v1/users`
+- `POST /api/v1/devices`
+- `POST /api/v1/devices/{id}/rotate-key`
+- `POST /api/v1/visits/generate`
 
 Device API key storage:
 - device ingest credentials are verified by hashing the presented key and matching `devices.api_key_hash`

@@ -26,7 +26,8 @@ const statusPageHTML = `<!doctype html>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="status_to_map_link" class="nav-link" href="/ui/map">Map</a>
-        __ADMIN_LINK__
+        __ADMIN_DEVICE_LINK__
+        __ADMIN_USERS_LINK__
         <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
@@ -118,7 +119,8 @@ const mapPageHTML = `<!doctype html>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="map_to_status_link" class="nav-link" href="/ui/status">Status</a>
-        __ADMIN_LINK__
+        __ADMIN_DEVICE_LINK__
+        __ADMIN_USERS_LINK__
         <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
@@ -197,6 +199,7 @@ const adminUsersPageHTML = `<!doctype html>
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a class="nav-link" href="/ui/status">Status</a>
         <a class="nav-link" href="/ui/map">Map</a>
+        <a id="admin_devices_link" class="nav-link" href="/ui/admin/devices">Devices</a>
         <form method="post" action="/logout" class="inline-form">
           <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
           <button class="logout-btn" type="submit">Logout</button>
@@ -231,6 +234,103 @@ const adminUsersPageHTML = `<!doctype html>
 </html>
 `
 
+const adminDevicesPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Plexplore Devices</title>
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <link rel="stylesheet" href="/ui/assets/app/app.css">
+  <link rel="stylesheet" href="/ui/assets/app/devices.css">
+  <script defer src="/ui/assets/app/common.js"></script>
+  <script defer src="/ui/assets/app/devices.js"></script>
+</head>
+<body>
+  <div class="wrap devices-wrap">
+    <div class="topbar">
+      <h1>Devices</h1>
+      <div class="top-actions">
+        <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
+        <a class="nav-link" href="/ui/status">Status</a>
+        <a class="nav-link" href="/ui/map">Map</a>
+        <a id="admin_users_link" class="nav-link" href="/ui/admin/users">Users</a>
+        <form method="post" action="/logout" class="inline-form">
+          <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+        <button id="theme_toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false">🌙</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Create Device</div>
+      <div class="row">
+        <select id="device_owner_select" class="mid-input" aria-label="Device owner"></select>
+        <input id="device_name" type="text" class="wide-input" placeholder="device name">
+        <select id="device_source_type" class="mid-input" aria-label="Source type">
+          <option value="owntracks">owntracks</option>
+          <option value="overland">overland</option>
+        </select>
+        <button id="create_device_btn" type="button">Create Device</button>
+      </div>
+      <div id="create_device_status" class="muted mt-8"></div>
+    </div>
+
+    <div class="card mt-12">
+      <div class="section-title">Rotate API Key</div>
+      <div id="rotate_status" class="muted">Use the Rotate button from a device row.</div>
+      <div id="rotate_result" class="rotate-result hidden">
+        <div class="status-warning">Save this API key now. It is shown once and cannot be retrieved later.</div>
+        <div class="row mt-8">
+          <input id="rotated_api_key" class="wide-input key-output" type="text" readonly>
+          <button id="copy_rotated_key_btn" type="button">Copy Key</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-12">
+      <div class="section-title">Generate Visits</div>
+      <div class="row">
+        <select id="visit_device_select" class="mid-input" aria-label="Visit device">
+          <option value="">All devices</option>
+        </select>
+        <label>From:
+          <input id="visit_from_date" type="date">
+        </label>
+        <label>To:
+          <input id="visit_to_date" type="date">
+        </label>
+        <button id="generate_visits_btn" type="button">Generate Visits</button>
+      </div>
+      <div id="generate_visits_status" class="muted mt-8"></div>
+    </div>
+
+    <div class="card mt-12">
+      <div class="section-title">Devices</div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Owner</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Key Preview</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="devices_admin_body">
+          <tr><td colspan="7" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div class="tiny mt-8">Delete/disable actions are not currently supported by backend APIs.</div>
+    </div>
+  </div>
+</body>
+</html>
+`
+
 func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
 	if deps.UserStore == nil || deps.SessionStore == nil {
 		panic("registerUIRoutes requires non-nil userStore and sessionStore")
@@ -247,6 +347,7 @@ func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
 	mux.Handle("GET /ui/status", protectedHTML(statusPageHandler(deps.CookieSecurity)))
 	mux.Handle("GET /ui/map", protectedHTML(mapPageHandler(deps.CookieSecurity, deps.MapTiles)))
 	mux.Handle("GET /ui/admin/users", protectedHTML(requireAdminHTML(adminUsersPageHandler(deps.CookieSecurity))))
+	mux.Handle("GET /ui/admin/devices", protectedHTML(requireAdminHTML(adminDevicesPageHandler(deps.CookieSecurity))))
 }
 
 func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
@@ -276,19 +377,31 @@ func adminUsersPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	}
 }
 
+func adminDevicesPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
+		setHTMLSecurityHeaders(w)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, renderUIPage(adminDevicesPageHTML, r, csrfToken))
+	}
+}
+
 func renderUIPage(page string, r *http.Request, csrfToken string) string {
 	userEmail := "local"
-	adminLink := ""
+	adminUsersLink := ""
+	adminDevicesLink := ""
 	if currentUser, ok := CurrentUserFromContext(r.Context()); ok {
 		if trimmed := strings.TrimSpace(currentUser.Email); trimmed != "" {
 			userEmail = trimmed
 		}
 		if currentUser.IsAdmin {
-			adminLink = `<a id="admin_users_link" class="nav-link" href="/ui/admin/users">Users</a>`
+			adminDevicesLink = `<a id="admin_devices_link" class="nav-link" href="/ui/admin/devices">Devices</a>`
+			adminUsersLink = `<a id="admin_users_link" class="nav-link" href="/ui/admin/users">Users</a>`
 		}
 	}
 	rendered := strings.ReplaceAll(page, "__USER_EMAIL__", html.EscapeString(userEmail))
-	rendered = strings.ReplaceAll(rendered, "__ADMIN_LINK__", adminLink)
+	rendered = strings.ReplaceAll(rendered, "__ADMIN_DEVICE_LINK__", adminDevicesLink)
+	rendered = strings.ReplaceAll(rendered, "__ADMIN_USERS_LINK__", adminUsersLink)
 	return strings.ReplaceAll(rendered, "__CSRF_TOKEN__", html.EscapeString(csrfToken))
 }
 
