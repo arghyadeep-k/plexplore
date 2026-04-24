@@ -93,6 +93,13 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	rateLimiters := api.RateLimiters{
+		TrustProxyHeaders: cfg.TrustProxyHeaders,
+	}
+	if cfg.RateLimitEnabled {
+		rateLimiters.Login = api.NewFixedWindowLimiter(cfg.RateLimitLoginMaxRequests, cfg.RateLimitLoginWindow)
+		rateLimiters.AdminSensitive = api.NewFixedWindowLimiter(cfg.RateLimitAdminMaxRequests, cfg.RateLimitAdminWindow)
+	}
 	api.RegisterRoutesWithDependencies(mux, api.Dependencies{
 		DeviceStore:        sqliteStore,
 		Spool:              spoolManager,
@@ -109,8 +116,9 @@ func main() {
 			SecureMode:        cfg.CookieSecureMode,
 			TrustProxyHeaders: cfg.TrustProxyHeaders,
 		},
-		SpoolDir:   cfg.SpoolDir,
-		SQLitePath: cfg.SQLitePath,
+		RateLimiters: rateLimiters,
+		SpoolDir:     cfg.SpoolDir,
+		SQLitePath:   cfg.SQLitePath,
 		IsDraining: func() bool {
 			return draining.Load()
 		},

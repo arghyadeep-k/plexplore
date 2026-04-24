@@ -53,10 +53,25 @@ type listDevicesResponse struct {
 }
 
 func registerDeviceRoutes(mux *http.ServeMux, deviceStore DeviceStore) {
-	registerDeviceRoutesWithAuth(mux, deviceStore, nil, nil)
+	registerDeviceRoutesWithAuth(mux, deviceStore, nil, nil, RateLimiters{})
 }
 
-func registerDeviceRoutesWithAuth(mux *http.ServeMux, deviceStore DeviceStore, userStore UserStore, sessionStore SessionStore) {
+func registerDeviceRoutesWithAuth(mux *http.ServeMux, deviceStore DeviceStore, userStore UserStore, sessionStore SessionStore, rateLimiters RateLimiters) {
+	withSensitiveRateLimit := func(scope string, next http.Handler) http.Handler {
+		limiter := rateLimiters.AdminSensitive
+		if limiter == nil {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limiterKey := rateLimitKeyForRequest(r, rateLimiters.TrustProxyHeaders, "admin:"+scope)
+			if allowed, retryAfter := limiter.Allow(limiterKey); !allowed {
+				writeRateLimitedJSON(w, retryAfter, "too many requests")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
 	if userStore != nil && sessionStore != nil {
 		withSessionAuth := func(next http.Handler) http.Handler {
 			return LoadCurrentUserFromSession(
@@ -65,17 +80,17 @@ func registerDeviceRoutesWithAuth(mux *http.ServeMux, deviceStore DeviceStore, u
 				RequireUserSessionAuth(next),
 			)
 		}
-		mux.Handle("POST /api/v1/devices", withSessionAuth(http.HandlerFunc(createDeviceHandler(deviceStore))))
+		mux.Handle("POST /api/v1/devices", withSessionAuth(withSensitiveRateLimit("devices:create", http.HandlerFunc(createDeviceHandler(deviceStore)))))
 		mux.Handle("GET /api/v1/devices", withSessionAuth(http.HandlerFunc(listDevicesHandler(deviceStore))))
 		mux.Handle("GET /api/v1/devices/{id}", withSessionAuth(http.HandlerFunc(getDeviceHandler(deviceStore))))
-		mux.Handle("POST /api/v1/devices/{id}/rotate-key", withSessionAuth(http.HandlerFunc(rotateDeviceKeyHandler(deviceStore))))
+		mux.Handle("POST /api/v1/devices/{id}/rotate-key", withSessionAuth(withSensitiveRateLimit("devices:rotate", http.HandlerFunc(rotateDeviceKeyHandler(deviceStore)))))
 		return
 	}
 
-	mux.HandleFunc("POST /api/v1/devices", createDeviceHandler(deviceStore))
+	mux.Handle("POST /api/v1/devices", withSensitiveRateLimit("devices:create", http.HandlerFunc(createDeviceHandler(deviceStore))))
 	mux.HandleFunc("GET /api/v1/devices", listDevicesHandler(deviceStore))
 	mux.HandleFunc("GET /api/v1/devices/{id}", getDeviceHandler(deviceStore))
-	mux.HandleFunc("POST /api/v1/devices/{id}/rotate-key", rotateDeviceKeyHandler(deviceStore))
+	mux.Handle("POST /api/v1/devices/{id}/rotate-key", withSensitiveRateLimit("devices:rotate", http.HandlerFunc(rotateDeviceKeyHandler(deviceStore))))
 }
 
 func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {

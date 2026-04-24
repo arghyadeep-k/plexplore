@@ -6,6 +6,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"plexplore/internal/store"
@@ -93,9 +94,9 @@ const loginPageHTML = `<!doctype html>
 </html>
 `
 
-func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy) {
+func registerLoginRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy, rateLimiters RateLimiters) {
 	mux.HandleFunc("GET /login", loginPageHandler(cookiePolicy))
-	mux.HandleFunc("POST /login", loginHandler(userStore, sessionStore, cookiePolicy))
+	mux.HandleFunc("POST /login", loginHandler(userStore, sessionStore, cookiePolicy, rateLimiters))
 	mux.HandleFunc("POST /logout", logoutHandler(sessionStore, cookiePolicy))
 }
 
@@ -105,9 +106,27 @@ func loginPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	}
 }
 
-func loginHandler(userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
+func loginHandler(userStore UserStore, sessionStore SessionStore, cookiePolicy CookieSecurityPolicy, rateLimiters RateLimiters) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		jsonRequest := isJSONLoginRequest(r)
+		if limiter := rateLimiters.Login; limiter != nil {
+			scope := "login"
+			limiterKey := rateLimitKeyForRequest(r, rateLimiters.TrustProxyHeaders, scope)
+			if allowed, retryAfter := limiter.Allow(limiterKey); !allowed {
+				if jsonRequest {
+					writeRateLimitedJSON(w, retryAfter, "too many login attempts")
+					return
+				}
+				retrySeconds := int(retryAfter.Seconds())
+				if retrySeconds < 1 {
+					retrySeconds = 1
+				}
+				w.Header().Set("Retry-After", strconv.Itoa(retrySeconds))
+				enteredEmail := strings.TrimSpace(r.FormValue("email"))
+				writeLoginPage(w, r, http.StatusTooManyRequests, enteredEmail, "Too many login attempts. Please try again shortly.", strings.TrimSpace(r.FormValue("next")), cookiePolicy)
+				return
+			}
+		}
 		if !validateCSRF(r) {
 			if jsonRequest {
 				writeJSONError(w, http.StatusForbidden, "csrf token invalid")

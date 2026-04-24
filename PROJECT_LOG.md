@@ -3250,3 +3250,66 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 03:38 UTC - Phase 76 (Login/Admin Route Rate Limiting)
+Implemented:
+- Added lightweight in-process fixed-window rate limiting (memory map + mutex, no external services).
+- Added route-scoped limiter model with separate policies:
+- strict login limiter for `POST /login`
+- moderate admin-sensitive limiter for:
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- `POST /api/v1/devices`
+- `POST /api/v1/devices/{id}/rotate-key`
+- Added safe client-IP keying with explicit proxy trust behavior:
+- default uses direct `RemoteAddr`
+- `X-Forwarded-For` is used only when `APP_TRUST_PROXY_HEADERS=true`
+- Added `429` responses with `Retry-After` header when limited.
+- Preserved existing login/auth/session behavior for normal traffic volume.
+- Added deterministic tests for:
+- repeated login attempts hitting limiter (429)
+- window reset allowing later attempts
+- admin-sensitive route limiting
+- non-sensitive routes (e.g. `/health`) unaffected
+- proxy-trust keying behavior
+- successful login still works under expected request volume
+- Added config knobs and wiring through server startup and API dependencies.
+- Updated README and deployment env samples with rate limit documentation.
+
+Architectural decisions:
+- Decision: Use fixed-window in-process rate limiting keyed by client IP and route scope.
+  Reason: Low-RAM, low-CPU, no external infrastructure, and simple operational model aligned with single-process Raspberry Pi deployment.
+- Decision: Reuse existing `APP_TRUST_PROXY_HEADERS` for limiter IP extraction behavior.
+  Reason: Avoid introducing duplicate proxy-trust configuration and keep trust semantics explicit and conservative.
+
+Files changed:
+- `internal/api/rate_limit.go`
+- `internal/api/rate_limit_test.go`
+- `internal/api/health.go`
+- `internal/api/login.go`
+- `internal/api/login_test.go`
+- `internal/api/users.go`
+- `internal/api/users_test.go`
+- `internal/api/devices.go`
+- `internal/api/devices_test.go`
+- `internal/config/config.go`
+- `cmd/server/main.go`
+- `README.md`
+- `compose.yaml`
+- `deploy/systemd/plexplore.env.sample`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/rate_limit.go internal/api/rate_limit_test.go internal/api/health.go internal/api/login.go internal/api/users.go internal/api/devices.go internal/api/login_test.go internal/api/users_test.go internal/api/devices_test.go internal/config/config.go cmd/server/main.go`
+- `go test ./internal/api -run 'Test(LoginRateLimit_|FixedWindowLimiter_|RateLimitKeyForRequest_|RateLimit_NonSensitiveHealthRouteUnaffected|Users_AdminRoutesRateLimited|DevicesAPI_AdminSensitiveWritesRateLimited|LoginPageServed|LoginSuccessSetsSessionCookie|Users_AdminCanCreateUser)' -count=1`
+- `go test ./cmd/server -count=1`
+- `go test ./...`
+
+Pending:
+- Tune route limit values for real deployment traffic patterns (especially admin automation/scripts).
+- Consider optional email+IP composite keying for login if abuse patterns require narrower targeting.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

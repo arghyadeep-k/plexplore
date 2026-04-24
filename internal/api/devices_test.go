@@ -307,6 +307,41 @@ func TestDevicesAPI_UserCannotFetchAnotherUsersDevice_WhenSessionAuthEnabled(t *
 	}
 }
 
+func TestDevicesAPI_AdminSensitiveWritesRateLimited(t *testing.T) {
+	ds := &fakeDeviceStore{}
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		DeviceStore: ds,
+		UserStore:   &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u10@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{
+			"token-u10": {Token: "token-u10", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		}},
+		RateLimiters: RateLimiters{
+			AdminSensitive: NewFixedWindowLimiter(1, time.Minute),
+		},
+	})
+
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"name":"phone","source_type":"owntracks","api_key":"k1"}`))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.RemoteAddr = "203.0.113.9:1234"
+	req1.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec1 := httptest.NewRecorder()
+	mux.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("expected first device create=201, got %d body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewBufferString(`{"name":"phone2","source_type":"owntracks","api_key":"k2"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.RemoteAddr = "203.0.113.9:1234"
+	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u10"})
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second device create=429, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+}
+
 func TestDevicesAPI_RotateKeyDeniedForNonOwner_WhenSessionAuthEnabled(t *testing.T) {
 	ds := &fakeDeviceStore{
 		devices: []store.Device{

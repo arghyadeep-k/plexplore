@@ -1,15 +1,16 @@
 # Next Steps
 
 ## Current milestone
-Status endpoint exposure hardening complete (public-safe `/status`, authenticated detailed `/api/v1/status`)
+Auth/admin route rate limiting complete (in-process fixed-window protection)
 
 ## Next 3 tasks
-1. Update external monitors/checks to use public `/status` or authenticated `/api/v1/status` as appropriate
-2. Run production-like migration rehearsal on a copied DB and verify legacy plaintext key backfill behavior
-3. Decide if/when to fully drop legacy `devices.api_key` column via table rebuild migration
+1. Tune rate-limit thresholds in staging/production based on real login/admin traffic patterns
+2. Update external monitors/checks to use public `/status` or authenticated `/api/v1/status` as appropriate
+3. Run production-like migration rehearsal on a copied DB and verify legacy plaintext key backfill behavior
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'Test(LoginRateLimit_|FixedWindowLimiter_|RateLimitKeyForRequest_|RateLimit_NonSensitiveHealthRouteUnaffected|Users_AdminRoutesRateLimited|DevicesAPI_AdminSensitiveWritesRateLimited)' -count=1`
 - `go test ./internal/api -run 'TestStatusEndpoint_|TestHealthEndpoint_RemainsPublic|TestStatusPageServedAtRoot|TestUIRoutesRequireSession_WhenSessionDepsProvided|TestUIRoutesAllowSession_WhenValidSessionCookiePresent' -count=1`
 - `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash|GetDeviceByAPIKey_NotFound|ListDevices)' -count=1`
 - `go test ./internal/api -run 'TestDevicesAPI_|TestRequireDeviceAPIKeyAuth' -count=1`
@@ -165,6 +166,11 @@ Status hardening adds:
 - `/health` stays public and minimal.
 - `/status` is public-safe and excludes internal runtime metadata.
 - `/api/v1/status` remains detailed but requires authenticated session when session auth is configured.
+Rate limiting adds:
+- `POST /login` protected by strict per-IP fixed-window limiter.
+- `GET/POST /api/v1/users` and `POST /api/v1/devices`, `POST /api/v1/devices/{id}/rotate-key` protected by moderate per-IP limiter.
+- `APP_TRUST_PROXY_HEADERS=true` enables trusted `X-Forwarded-For` use for limiter keys; otherwise direct remote address is used.
+- New knobs: `APP_RATE_LIMIT_ENABLED`, `APP_RATE_LIMIT_LOGIN_MAX_REQUESTS`, `APP_RATE_LIMIT_LOGIN_WINDOW`, `APP_RATE_LIMIT_ADMIN_MAX_REQUESTS`, `APP_RATE_LIMIT_ADMIN_WINDOW`.
 Task sequence in `codex_tasks.md` is complete through Task 7.
 Current active sequence is the newer 18-task multi-user auth plan in `codex_tasks.md`; continue strictly in order from Task 2.
 Continue strictly in order from Task 3 next.

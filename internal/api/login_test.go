@@ -346,6 +346,105 @@ func TestLoginInvalidCredentials_JSONStillReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimit_Hits429AfterRepeatedAttempts(t *testing.T) {
+	hash, err := HashPassword("correct-pass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	userStore := &fakeAuthUserStore{
+		byEmail: map[string]store.User{
+			"user@example.com": {
+				ID:           8,
+				Email:        "user@example.com",
+				PasswordHash: hash,
+			},
+		},
+	}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: &fakeAuthSessionStore{},
+		RateLimiters: RateLimiters{
+			Login: NewFixedWindowLimiter(2, time.Minute),
+		},
+	})
+
+	csrfToken, csrfCookie := fetchLoginCSRF(t, mux)
+	post := func() *httptest.ResponseRecorder {
+		form := url.Values{}
+		form.Set("email", "user@example.com")
+		form.Set("password", "wrong-pass")
+		form.Set("csrf_token", csrfToken)
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.10:12345"
+		req.AddCookie(csrfCookie)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := post()
+	if first.Code != http.StatusUnauthorized {
+		t.Fatalf("expected first bad login=401, got %d body=%s", first.Code, first.Body.String())
+	}
+	second := post()
+	if second.Code != http.StatusUnauthorized {
+		t.Fatalf("expected second bad login=401, got %d body=%s", second.Code, second.Body.String())
+	}
+	third := post()
+	if third.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected third bad login=429, got %d body=%s", third.Code, third.Body.String())
+	}
+	if retry := strings.TrimSpace(third.Header().Get("Retry-After")); retry == "" {
+		t.Fatalf("expected Retry-After header on limited response")
+	}
+}
+
+func TestLoginRateLimit_AllowsNormalSuccessfulUsageUnderLimit(t *testing.T) {
+	hash, err := HashPassword("test-pass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	userStore := &fakeAuthUserStore{
+		byEmail: map[string]store.User{
+			"admin@example.com": {
+				ID:           7,
+				Email:        "admin@example.com",
+				PasswordHash: hash,
+			},
+		},
+	}
+	sessionStore := &fakeAuthSessionStore{}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+		RateLimiters: RateLimiters{
+			Login: NewFixedWindowLimiter(5, time.Minute),
+		},
+	})
+
+	csrfToken, csrfCookie := fetchLoginCSRF(t, mux)
+
+	form := url.Values{}
+	form.Set("email", "admin@example.com")
+	form.Set("password", "test-pass")
+	form.Set("csrf_token", csrfToken)
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "198.51.100.11:12345"
+	req.AddCookie(csrfCookie)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected successful login redirect under limiter, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLoginSuccess_WithNextParamRedirectsToRequestedPage(t *testing.T) {
 	hash, err := HashPassword("test-pass")
 	if err != nil {

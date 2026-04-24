@@ -87,6 +87,7 @@ type Dependencies struct {
 	UserStore          UserStore
 	SessionStore       SessionStore
 	CookieSecurity     CookieSecurityPolicy
+	RateLimiters       RateLimiters
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
@@ -100,7 +101,7 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("GET /health", healthHandler)
 	registerUIRoutes(mux, deps)
 	if deps.DeviceStore != nil {
-		registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore)
+		registerDeviceRoutesWithAuth(mux, deps.DeviceStore, deps.UserStore, deps.SessionStore, deps.RateLimiters)
 	}
 	if deps.DeviceStore != nil && deps.Spool != nil && deps.Buffer != nil {
 		registerIngestRoutes(mux, deps)
@@ -116,8 +117,8 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 		registerVisitRoutes(mux, deps)
 	}
 	if deps.UserStore != nil && deps.SessionStore != nil {
-		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity)
-		registerUserRoutes(mux, deps.UserStore, deps.SessionStore)
+		registerLoginRoutes(mux, deps.UserStore, deps.SessionStore, deps.CookieSecurity, deps.RateLimiters)
+		registerUserRoutes(mux, deps.UserStore, deps.SessionStore, deps.RateLimiters)
 	}
 }
 

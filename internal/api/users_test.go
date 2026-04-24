@@ -233,3 +233,43 @@ func TestUsers_ListDoesNotExposePasswordHash(t *testing.T) {
 		t.Fatalf("list users response leaked password_hash: %s", rec.Body.String())
 	}
 }
+
+func TestUsers_AdminRoutesRateLimited(t *testing.T) {
+	userStore := &fakeAdminUserStore{
+		users: []store.User{
+			{ID: 1, Email: "admin@example.com", IsAdmin: true, PasswordHash: "hash-admin", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	sessionStore := &fakeAuthzSessionStore{
+		sessions: map[string]store.Session{
+			"admin-token": {Token: "admin-token", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		},
+	}
+
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+		RateLimiters: RateLimiters{
+			AdminSensitive: NewFixedWindowLimiter(1, time.Minute),
+		},
+	})
+
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req1.RemoteAddr = "198.51.100.22:1000"
+	req1.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "admin-token"})
+	rec1 := httptest.NewRecorder()
+	mux.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected first admin users request=200, got %d body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req2.RemoteAddr = "198.51.100.22:1000"
+	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "admin-token"})
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second admin users request=429, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+}

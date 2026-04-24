@@ -44,6 +44,16 @@ type Config struct {
 	TrustProxyHeaders bool
 	// ExpectTLSTermination indicates deployment expects TLS at a reverse proxy.
 	ExpectTLSTermination bool
+	// RateLimitEnabled controls in-process auth/admin route rate limiting.
+	RateLimitEnabled bool
+	// RateLimitLoginMaxRequests is the max login attempts per window.
+	RateLimitLoginMaxRequests int
+	// RateLimitLoginWindow is the login limiter window.
+	RateLimitLoginWindow time.Duration
+	// RateLimitAdminMaxRequests is the max admin-sensitive requests per window.
+	RateLimitAdminMaxRequests int
+	// RateLimitAdminWindow is the admin-sensitive limiter window.
+	RateLimitAdminWindow time.Duration
 
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
@@ -80,6 +90,11 @@ func Load() Config {
 		CookieSecureMode:                   getCookieSecureMode("APP_COOKIE_SECURE_MODE", "auto"),
 		TrustProxyHeaders:                  getEnvBool("APP_TRUST_PROXY_HEADERS", false),
 		ExpectTLSTermination:               getEnvBool("APP_EXPECT_TLS_TERMINATION", false),
+		RateLimitEnabled:                   getEnvBool("APP_RATE_LIMIT_ENABLED", true),
+		RateLimitLoginMaxRequests:          getEnvInt("APP_RATE_LIMIT_LOGIN_MAX_REQUESTS", 10),
+		RateLimitLoginWindow:               getEnvDuration("APP_RATE_LIMIT_LOGIN_WINDOW", time.Minute),
+		RateLimitAdminMaxRequests:          getEnvInt("APP_RATE_LIMIT_ADMIN_MAX_REQUESTS", 30),
+		RateLimitAdminWindow:               getEnvDuration("APP_RATE_LIMIT_ADMIN_WINDOW", time.Minute),
 		ReadTimeout:                        time.Duration(getEnvInt("APP_READ_TIMEOUT_SECONDS", 5)) * time.Second,
 		WriteTimeout:                       time.Duration(getEnvInt("APP_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
 		IdleTimeout:                        time.Duration(getEnvInt("APP_IDLE_TIMEOUT_SECONDS", 30)) * time.Second,

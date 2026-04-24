@@ -568,6 +568,16 @@ Device API key storage:
 - list/read device endpoints expose only `api_key_preview`
 - create/rotate endpoints return full key once for operator capture
 
+Rate limiting:
+- lightweight in-process fixed-window limiter (no Redis/external service)
+- rate-limit key is client IP
+- `X-Forwarded-For` is considered only when `APP_TRUST_PROXY_HEADERS=true`
+- protected routes:
+- `POST /login` (strict)
+- `GET /api/v1/users` and `POST /api/v1/users` (admin-sensitive)
+- `POST /api/v1/devices` and `POST /api/v1/devices/{id}/rotate-key` (admin-sensitive write protection)
+- limited responses return `429` and `Retry-After`
+
 Cookie/proxy knobs:
 - `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto`)
 - `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
@@ -674,6 +684,11 @@ Environment variables commonly used in containers:
 - `APP_COOKIE_SECURE_MODE`
 - `APP_TRUST_PROXY_HEADERS`
 - `APP_EXPECT_TLS_TERMINATION`
+- `APP_RATE_LIMIT_ENABLED`
+- `APP_RATE_LIMIT_LOGIN_MAX_REQUESTS`
+- `APP_RATE_LIMIT_LOGIN_WINDOW`
+- `APP_RATE_LIMIT_ADMIN_MAX_REQUESTS`
+- `APP_RATE_LIMIT_ADMIN_WINDOW`
 - `APP_SPOOL_FSYNC_MODE`
 - `APP_SPOOL_FSYNC_INTERVAL`
 - `APP_SPOOL_FSYNC_BYTE_THRESHOLD`
@@ -703,6 +718,11 @@ Raspberry Pi Zero 2 W caveats:
 - `APP_COOKIE_SECURE_MODE` (default: `auto`): cookie `Secure` policy (`auto`, `always`, `never`).
 - `APP_TRUST_PROXY_HEADERS` (default: `false`): allow trusted `X-Forwarded-Proto` to influence cookie `Secure` behavior.
 - `APP_EXPECT_TLS_TERMINATION` (default: `false`): deployment hint used for startup warnings when proxy/TLS settings look inconsistent.
+- `APP_RATE_LIMIT_ENABLED` (default: `true`): enable auth/admin in-process route limiting.
+- `APP_RATE_LIMIT_LOGIN_MAX_REQUESTS` (default: `10`): allowed `POST /login` attempts per window per client IP.
+- `APP_RATE_LIMIT_LOGIN_WINDOW` (default: `1m`): login limiter window duration.
+- `APP_RATE_LIMIT_ADMIN_MAX_REQUESTS` (default: `30`): allowed admin-sensitive requests per window per client IP.
+- `APP_RATE_LIMIT_ADMIN_WINDOW` (default: `1m`): admin-sensitive limiter window duration.
 - `APP_READ_TIMEOUT_SECONDS` (default: `5`): HTTP read timeout in seconds.
 - `APP_WRITE_TIMEOUT_SECONDS` (default: `10`): HTTP write timeout in seconds.
 - `APP_IDLE_TIMEOUT_SECONDS` (default: `30`): HTTP idle timeout in seconds.

@@ -29,7 +29,22 @@ type createUserRequest struct {
 	IsAdmin  bool   `json:"is_admin"`
 }
 
-func registerUserRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore) {
+func registerUserRoutes(mux *http.ServeMux, userStore UserStore, sessionStore SessionStore, rateLimiters RateLimiters) {
+	withAdminSensitiveRateLimit := func(scope string, next http.Handler) http.Handler {
+		limiter := rateLimiters.AdminSensitive
+		if limiter == nil {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limiterKey := rateLimitKeyForRequest(r, rateLimiters.TrustProxyHeaders, "admin:"+scope)
+			if allowed, retryAfter := limiter.Allow(limiterKey); !allowed {
+				writeRateLimitedJSON(w, retryAfter, "too many requests")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
 	authAdmin := func(next http.Handler) http.Handler {
 		return LoadCurrentUserFromSession(
 			sessionStore,
@@ -38,8 +53,8 @@ func registerUserRoutes(mux *http.ServeMux, userStore UserStore, sessionStore Se
 		)
 	}
 
-	mux.Handle("GET /api/v1/users", authAdmin(http.HandlerFunc(listUsersHandler(userStore))))
-	mux.Handle("POST /api/v1/users", authAdmin(http.HandlerFunc(createUserHandler(userStore))))
+	mux.Handle("GET /api/v1/users", authAdmin(withAdminSensitiveRateLimit("users:list", http.HandlerFunc(listUsersHandler(userStore)))))
+	mux.Handle("POST /api/v1/users", authAdmin(withAdminSensitiveRateLimit("users:create", http.HandlerFunc(createUserHandler(userStore)))))
 }
 
 func listUsersHandler(userStore UserStore) http.HandlerFunc {
