@@ -25,9 +25,22 @@ type operationalStatusResponse struct {
 	LastFlush                *lastFlushStatusResponse `json:"last_flush,omitempty"`
 }
 
+type publicStatusResponse struct {
+	ServiceHealth string `json:"service_health"`
+	Service       string `json:"service"`
+}
+
 func registerStatusRoutes(mux *http.ServeMux, deps Dependencies) {
-	mux.HandleFunc("GET /api/v1/status", statusHandler(deps))
-	mux.HandleFunc("GET /status", statusHandler(deps))
+	status := http.Handler(statusHandler(deps))
+	if deps.SessionStore != nil && deps.UserStore != nil {
+		status = LoadCurrentUserFromSession(
+			deps.SessionStore,
+			deps.UserStore,
+			RequireUserSessionAuth(status),
+		)
+	}
+	mux.Handle("GET /api/v1/status", status)
+	mux.HandleFunc("GET /status", publicStatusHandler)
 }
 
 func statusHandler(deps Dependencies) http.HandlerFunc {
@@ -77,4 +90,11 @@ func statusHandler(deps Dependencies) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+func publicStatusHandler(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, publicStatusResponse{
+		ServiceHealth: "ok",
+		Service:       "plexplore",
+	})
 }

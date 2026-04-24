@@ -37,7 +37,12 @@ func OpenSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("apply sqlite pragmas: %w", err)
 	}
 
-	return &SQLiteStore{db: db}, nil
+	store := &SQLiteStore{db: db}
+	if err := store.backfillDeviceAPIKeyHashes(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 func (s *SQLiteStore) Close() error {
@@ -242,13 +247,15 @@ LIMIT 1;
 		return 0, fmt.Errorf("lookup device %q for user %d: %w", deviceName, userID, err)
 	}
 
-	apiKey := fmt.Sprintf("auto:%d:%s", userID, deviceName)
+	apiKeySentinel, err := generateAPIKeySentinel()
+	if err != nil {
+		return 0, err
+	}
 	nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.Exec(`
-INSERT INTO devices(user_id, name, source_type, api_key, last_seq_received, updated_at)
-VALUES (?, ?, ?, ?, 0, ?)
-ON CONFLICT(api_key) DO NOTHING;
-`, userID, deviceName, sourceType, apiKey, nowUTC); err != nil {
+INSERT INTO devices(user_id, name, source_type, api_key, api_key_hash, api_key_preview, last_seq_received, updated_at)
+VALUES (?, ?, ?, ?, '', '', 0, ?);
+`, userID, deviceName, sourceType, apiKeySentinel, nowUTC); err != nil {
 		return 0, fmt.Errorf("ensure device %q: %w", deviceName, err)
 	}
 
@@ -257,6 +264,159 @@ ON CONFLICT(api_key) DO NOTHING;
 		return 0, fmt.Errorf("select device id %q: %w", deviceName, err)
 	}
 	return id, nil
+}
+
+func (s *SQLiteStore) backfillDeviceAPIKeyHashes() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	hasDevices, err := s.tableExists("devices")
+	if err != nil {
+		return fmt.Errorf("check devices table: %w", err)
+	}
+	if !hasDevices {
+		return nil
+	}
+	hasHash, err := s.columnExists("devices", "api_key_hash")
+	if err != nil {
+		return fmt.Errorf("check devices.api_key_hash: %w", err)
+	}
+	hasPreview, err := s.columnExists("devices", "api_key_preview")
+	if err != nil {
+		return fmt.Errorf("check devices.api_key_preview: %w", err)
+	}
+	if !hasHash || !hasPreview {
+		return nil
+	}
+
+	rows, err := s.db.Query(`
+SELECT id, COALESCE(api_key, ''), COALESCE(api_key_hash, ''), COALESCE(api_key_preview, '')
+FROM devices
+ORDER BY id ASC;
+`)
+	if err != nil {
+		return fmt.Errorf("load device keys for backfill: %w", err)
+	}
+	defer rows.Close()
+
+	type pendingUpdate struct {
+		id       int64
+		sentinel string
+		hash     string
+		preview  string
+	}
+	updates := make([]pendingUpdate, 0)
+	for rows.Next() {
+		var id int64
+		var apiKey string
+		var apiKeyHash string
+		var apiKeyPreview string
+		if err := rows.Scan(&id, &apiKey, &apiKeyHash, &apiKeyPreview); err != nil {
+			return fmt.Errorf("scan backfill device row: %w", err)
+		}
+		key := strings.TrimSpace(apiKey)
+		hash := strings.TrimSpace(apiKeyHash)
+		preview := strings.TrimSpace(apiKeyPreview)
+
+		if hash == "" && key != "" {
+			hash = hashDeviceAPIKey(key)
+		}
+		if preview == "" && key != "" {
+			preview = buildAPIKeyPreview(key)
+		}
+		if hash == "" {
+			continue
+		}
+
+		sentinel := fmt.Sprintf("hashonly:%d", id)
+		if key == sentinel && apiKeyHash == hash && apiKeyPreview == preview {
+			continue
+		}
+		updates = append(updates, pendingUpdate{
+			id:       id,
+			sentinel: sentinel,
+			hash:     hash,
+			preview:  preview,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate backfill device rows: %w", err)
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin backfill tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	stmt, err := tx.Prepare(`
+UPDATE devices
+SET api_key = ?, api_key_hash = ?, api_key_preview = ?
+WHERE id = ?;
+`)
+	if err != nil {
+		return fmt.Errorf("prepare backfill update: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, update := range updates {
+		if _, err := stmt.Exec(update.sentinel, update.hash, update.preview, update.id); err != nil {
+			return fmt.Errorf("backfill device id=%d: %w", update.id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit backfill tx: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) tableExists(tableName string) (bool, error) {
+	var name string
+	err := s.db.QueryRow(`
+SELECT name
+FROM sqlite_master
+WHERE type='table' AND name = ?
+LIMIT 1;
+`, tableName).Scan(&name)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(name) != "", nil
+}
+
+func (s *SQLiteStore) columnExists(tableName, columnName string) (bool, error) {
+	rows, err := s.db.Query(`PRAGMA table_info(` + tableName + `);`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var colType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(columnName)) {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func normalizedDeviceName(deviceID string) string {

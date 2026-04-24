@@ -11,6 +11,7 @@ import (
 	"plexplore/internal/flusher"
 	"plexplore/internal/ingest"
 	"plexplore/internal/spool"
+	"plexplore/internal/store"
 )
 
 type fakeStatusBuffer struct {
@@ -80,9 +81,16 @@ func TestStatusEndpoint_ReturnsOperationalState(t *testing.T) {
 		},
 		SpoolDir:   "/tmp/plexplore-spool",
 		SQLitePath: "/tmp/plexplore.db",
+		UserStore:  &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"token-1": {Token: "token-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -135,9 +143,16 @@ func TestStatusEndpoint_IncludesLastFlushError(t *testing.T) {
 				Error:   "sqlite busy",
 			},
 		},
+		UserStore: &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"token-1": {Token: "token-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -157,7 +172,33 @@ func TestStatusEndpoint_IncludesLastFlushError(t *testing.T) {
 	}
 }
 
-func TestStatusEndpoint_AliasRoute(t *testing.T) {
+func TestStatusEndpoint_UnauthenticatedDenied_WhenSessionDepsProvided(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		Buffer: &fakeStatusBuffer{
+			stats: buffer.Stats{
+				TotalBufferedPoints: 2,
+				TotalBufferedBytes:  128,
+			},
+		},
+		Spool: &fakeStatusSpool{
+			segmentCount: 2,
+			checkpoint:   spool.Checkpoint{LastCommittedSeq: 9},
+		},
+		UserStore:    &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated /api/v1/status, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStatusEndpoint_PublicAliasRouteIsSafe(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutesWithDependencies(mux, Dependencies{
 		Buffer: &fakeStatusBuffer{
@@ -178,5 +219,37 @@ func TestStatusEndpoint_AliasRoute(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on /status alias, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() == "" {
+		t.Fatalf("expected public status body")
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal /status response failed: %v", err)
+	}
+	if _, ok := resp["spool_dir_path"]; ok {
+		t.Fatalf("did not expect sensitive field spool_dir_path in /status: %+v", resp)
+	}
+	if _, ok := resp["sqlite_db_path"]; ok {
+		t.Fatalf("did not expect sensitive field sqlite_db_path in /status: %+v", resp)
+	}
+	if _, ok := resp["checkpoint_seq"]; ok {
+		t.Fatalf("did not expect sensitive field checkpoint_seq in /status: %+v", resp)
+	}
+	if got := resp["service_health"]; got != "ok" {
+		t.Fatalf("expected service_health=ok, got %+v", got)
+	}
+}
+
+func TestHealthEndpoint_RemainsPublic(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /health, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

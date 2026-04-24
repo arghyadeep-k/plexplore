@@ -1,15 +1,19 @@
 # Next Steps
 
 ## Current milestone
-Cookie/proxy TLS hardening complete for session + CSRF cookies (post-auth security pass)
+Status endpoint exposure hardening complete (public-safe `/status`, authenticated detailed `/api/v1/status`)
 
 ## Next 3 tasks
-1. Run manual HTTPS reverse-proxy validation (trusted vs untrusted forwarded proto) on target Raspberry Pi deployment
-2. Set production env defaults per deployment target (`APP_COOKIE_SECURE_MODE`, `APP_TRUST_PROXY_HEADERS`, `APP_EXPECT_TLS_TERMINATION`)
-3. Monitor startup warnings and auth logs after rollout, then define the next milestone
+1. Update external monitors/checks to use public `/status` or authenticated `/api/v1/status` as appropriate
+2. Run production-like migration rehearsal on a copied DB and verify legacy plaintext key backfill behavior
+3. Decide if/when to fully drop legacy `devices.api_key` column via table rebuild migration
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'TestStatusEndpoint_|TestHealthEndpoint_RemainsPublic|TestStatusPageServedAtRoot|TestUIRoutesRequireSession_WhenSessionDepsProvided|TestUIRoutesAllowSession_WhenValidSessionCookiePresent' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash|GetDeviceByAPIKey_NotFound|ListDevices)' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_|TestRequireDeviceAPIKeyAuth' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_(MultiUserAuthorizationIsolation|DeviceAPIKeyStoredHashedAtRest)' -count=1`
 - `go test ./internal/api -run 'Test(Login|CookieSecurityPolicy|LoadCurrentUserFromSession|RequireUserSessionAuth)' -count=1`
 - `go test ./cmd/server -count=1`
 - `go test ./internal/flusher`
@@ -153,6 +157,14 @@ Cookie `Secure` behavior now:
 - trusted `X-Forwarded-Proto=https` => `Secure` only when `APP_TRUST_PROXY_HEADERS=true`
 - local HTTP dev can use `APP_COOKIE_SECURE_MODE=never` (or `auto` without TLS)
 Startup logs now warn for risky cookie/proxy/public-bind combinations.
+Device API key hardening adds:
+- API keys are authenticated via `devices.api_key_hash` (SHA-256 of presented key).
+- DB backfill on store open migrates legacy plaintext `devices.api_key` to hash + preview and replaces plaintext with non-secret sentinel.
+- `POST /api/v1/devices` and `POST /api/v1/devices/{id}/rotate-key` still return full key once; list/read remain masked.
+Status hardening adds:
+- `/health` stays public and minimal.
+- `/status` is public-safe and excludes internal runtime metadata.
+- `/api/v1/status` remains detailed but requires authenticated session when session auth is configured.
 Task sequence in `codex_tasks.md` is complete through Task 7.
 Current active sequence is the newer 18-task multi-user auth plan in `codex_tasks.md`; continue strictly in order from Task 2.
 Continue strictly in order from Task 3 next.

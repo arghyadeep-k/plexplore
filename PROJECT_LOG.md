@@ -3154,3 +3154,99 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 03:21 UTC - Phase 74 (Device API Keys Hashed At Rest)
+Implemented:
+- Replaced plaintext-at-rest device credential usage with hash-at-rest flow:
+- added migration `0007_device_api_key_hash.sql` with `devices.api_key_hash` and `devices.api_key_preview` plus lookup index
+- device auth now hashes presented API key and looks up by `api_key_hash`
+- create/rotate now persist `api_key_hash` + `api_key_preview`; `devices.api_key` is stored as a non-secret sentinel, not plaintext credential
+- create/rotate API responses still return plaintext key exactly once to caller
+- list/read responses continue to expose only `api_key_preview`
+- Added safe transition/backfill for existing databases:
+- on store open, legacy plaintext `devices.api_key` rows are backfilled to hash + preview
+- legacy plaintext values are replaced with deterministic non-secret sentinel values (`hashonly:<id>`)
+- Updated ingest-side auto-device creation to avoid using plaintext API keys.
+- Added/updated tests:
+- store tests now verify no plaintext key is persisted and rotation invalidates old key while keeping hash lookup functional
+- added backfill test for legacy plaintext rows
+- added integration coverage that ingest still authenticates with presented key while DB stores only hash/sentinel
+- Updated README with hashed-at-rest and one-time display guidance.
+
+Architectural decisions:
+- Decision: Use deterministic SHA-256 hashing for device API key verification (`api_key_hash`) with a dedicated indexed lookup column.
+  Reason: API keys are high-entropy secrets and require deterministic server-side lookup for lightweight auth on Raspberry Pi without introducing heavyweight KDF-based scan patterns or extra services.
+- Decision: Keep legacy `devices.api_key` column but replace values with non-secret sentinels immediately after backfill/write.
+  Reason: Avoid risky table-rebuild migration complexity while ensuring plaintext credentials are not retained at rest.
+
+Files changed:
+- `migrations/0007_device_api_key_hash.sql`
+- `internal/store/device_keys.go`
+- `internal/store/devices.go`
+- `internal/store/sqlite_store.go`
+- `internal/store/devices_test.go`
+- `internal/store/sqlite_store_test.go`
+- `internal/api/devices.go`
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/device_keys.go internal/store/devices.go internal/store/sqlite_store.go internal/store/devices_test.go internal/store/sqlite_store_test.go internal/api/devices.go internal/tasks/multi_user_auth_integration_test.go`
+- `go test ./internal/store -run 'TestSQLiteStore_(CreateAndLookupDeviceByAPIKey|GetDeviceByID_AndRotateAPIKey|BackfillPlaintextDeviceKeyToHash|GetDeviceByAPIKey_NotFound|ListDevices)' -count=1`
+- `go test ./internal/api -run 'TestDevicesAPI_|TestRequireDeviceAPIKeyAuth' -count=1`
+- `go test ./internal/tasks -run 'TestIntegration_(MultiUserAuthorizationIsolation|DeviceAPIKeyStoredHashedAtRest)' -count=1`
+- `go test ./...`
+
+Pending:
+- Optional follow-up migration can remove/deprecate `devices.api_key` column entirely via table rebuild if schema strictness is desired.
+- Validate production rollout against a copy of real DB backup to confirm backfill latency and credentials continuity.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 03:27 UTC - Phase 75 (Status Endpoint Exposure Hardening)
+Implemented:
+- Hardened operational status exposure with a split public/private model:
+- `GET /health` remains public and minimal
+- `GET /status` is now public-safe and minimal (`service_health`, `service`)
+- `GET /api/v1/status` remains detailed but now requires authenticated user session when session dependencies are enabled
+- Sensitive operational fields are no longer exposed via public `/status`, including:
+- filesystem/config paths (`spool_dir_path`, `sqlite_db_path`)
+- spool internals (`spool_segment_count`)
+- checkpoint details (`checkpoint_seq`)
+- flush internals and errors (`last_flush_*`, nested `last_flush`)
+- Reused existing session middleware (`LoadCurrentUserFromSession` + `RequireUserSessionAuth`) for low-overhead protection.
+- Kept status UI behavior intact; UI already runs under authenticated session and continues using `/api/v1/status`.
+- Added/updated tests for:
+- authenticated access success on `/api/v1/status`
+- unauthenticated denial on `/api/v1/status` when session auth is configured
+- public `/status` alias excludes sensitive fields
+- public `/health` remains accessible
+- Updated README operational status documentation and examples to reflect public-safe vs authenticated endpoints.
+
+Architectural decisions:
+- Decision: Use split status exposure instead of fully blocking all status routes.
+  Reason: Preserves lightweight unauthenticated monitoring via `/status` while preventing sensitive runtime metadata disclosure and keeping existing authenticated UI operations unchanged.
+
+Files changed:
+- `internal/api/status.go`
+- `internal/api/status_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/status.go internal/api/status_test.go`
+- `go test ./internal/api -run 'TestStatusEndpoint_|TestHealthEndpoint_RemainsPublic|TestStatusPageServedAtRoot|TestUIRoutesRequireSession_WhenSessionDepsProvided|TestUIRoutesAllowSession_WhenValidSessionCookiePresent' -count=1`
+- `go test ./...`
+
+Pending:
+- If stricter posture is desired, consider making detailed `/api/v1/status` admin-only rather than authenticated-user scope.
+- Review any external monitoring that previously scraped `/api/v1/status` without session and switch it to `/status` or authenticated access.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

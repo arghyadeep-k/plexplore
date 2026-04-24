@@ -51,8 +51,10 @@ Session auth and scoping:
 - admin users may create devices for another user by supplying `user_id` in create request
 
 Device API key hygiene:
+- device API keys are stored hashed at rest (`api_key_hash`), not plaintext
 - create and rotate responses include full `api_key` once
 - list/read responses return only `api_key_preview` (masked)
+- save the returned key at creation/rotation time; it is not recoverable later
 
 Example workflow:
 
@@ -262,16 +264,22 @@ Known caveats:
 - `401 Unauthorized`:
   API key missing or invalid; verify `X-API-Key`/`Authorization` and device key rotation state
 - `500 Internal Server Error`:
-  server-side issue (commonly migration/schema mismatch or SQLite/runtime failure); run `make migrate`, check `/api/v1/status`, and inspect server logs
+  server-side issue (commonly migration/schema mismatch or SQLite/runtime failure); run `make migrate`, check authenticated `/api/v1/status` (or public-safe `/status`), and inspect server logs
 
 ## Operational Status
 
-- `GET /api/v1/status` (and alias `GET /status`) returns a small JSON snapshot for operations.
+- `GET /health` is public and minimal (`{"status":"ok","service":"plexplore"}`).
+- `GET /status` is public-safe and minimal (`service_health`, `service` only).
+- `GET /api/v1/status` returns detailed operational data and requires authenticated user session.
 
 Example:
 
 ```bash
+# Public-safe status
 curl -sS http://localhost:8080/status
+
+# Detailed status (authenticated session required)
+curl -sS -H "Cookie: plexplore_session=<session-token>" http://localhost:8080/api/v1/status
 ```
 
 Example response:
@@ -296,11 +304,8 @@ Example response:
 ```
 
 Included fields (when available):
-- service health
-- buffer points/bytes and oldest buffered age
-- spool directory path, active segment count, checkpoint sequence
-- last flush attempt time, last successful flush time, last flush error
-- SQLite database path
+- Public `/status`: service health and service name only.
+- Authenticated `/api/v1/status`: buffer points/bytes, oldest buffered age, spool/checkpoint state, flush timing/error, and configured spool/sqlite paths.
 
 ## Recent Points (Debug)
 
@@ -557,6 +562,12 @@ Users page notes:
 - `POST /logout`
 - `POST /api/v1/users`
 
+Device API key storage:
+- device ingest credentials are verified by hashing the presented key and matching `devices.api_key_hash`
+- plaintext device keys are not stored in SQLite after migration/backfill
+- list/read device endpoints expose only `api_key_preview`
+- create/rotate endpoints return full key once for operator capture
+
 Cookie/proxy knobs:
 - `APP_COOKIE_SECURE_MODE=auto|always|never` (default `auto`)
 - `APP_TRUST_PROXY_HEADERS=true|false` (default `false`)
@@ -733,6 +744,11 @@ go run ./cmd/migrate
 
 The migration runner keeps a `schema_migrations` table and applies `.sql` files
 from `APP_MIGRATIONS_DIR` in filename order.
+
+Device key hash migration:
+- migration `0007_device_api_key_hash.sql` adds `devices.api_key_hash` and `devices.api_key_preview`
+- on store open, legacy plaintext device keys are backfilled to hash + preview and `devices.api_key` is replaced with a non-secret sentinel value
+- after backfill, ingest auth relies on `api_key_hash` lookups only
 
 SQLite pragmas applied by migration runner (Pi-friendly defaults):
 

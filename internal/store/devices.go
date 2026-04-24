@@ -13,14 +13,16 @@ var ErrDeviceNotFound = errors.New("device not found")
 
 // Device is the minimal device record used for management and API-key auth.
 type Device struct {
-	ID         int64
-	UserID     int64
-	Name       string
-	SourceType string
-	APIKey     string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	LastSeenAt *time.Time
+	ID            int64
+	UserID        int64
+	Name          string
+	SourceType    string
+	APIKey        string
+	APIKeyHash    string
+	APIKeyPreview string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LastSeenAt    *time.Time
 }
 
 // CreateDeviceParams contains input fields for manual device registration.
@@ -44,6 +46,15 @@ func (s *SQLiteStore) CreateDevice(ctx context.Context, params CreateDeviceParam
 	if apiKey == "" {
 		return Device{}, fmt.Errorf("api key is required")
 	}
+	apiKeyHash := hashDeviceAPIKey(apiKey)
+	if apiKeyHash == "" {
+		return Device{}, fmt.Errorf("api key is required")
+	}
+	apiKeyPreview := buildAPIKeyPreview(apiKey)
+	apiKeySentinel, err := generateAPIKeySentinel()
+	if err != nil {
+		return Device{}, err
+	}
 
 	userID := params.UserID
 	if userID <= 0 {
@@ -61,9 +72,9 @@ ON CONFLICT(id) DO NOTHING;
 
 	nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO devices(user_id, name, source_type, api_key, last_seq_received, updated_at)
-VALUES (?, ?, ?, ?, 0, ?);
-`, userID, name, sourceType, apiKey, nowUTC)
+INSERT INTO devices(user_id, name, source_type, api_key, api_key_hash, api_key_preview, last_seq_received, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, 0, ?);
+`, userID, name, sourceType, apiKeySentinel, apiKeyHash, apiKeyPreview, nowUTC)
 	if err != nil {
 		return Device{}, fmt.Errorf("create device: %w", err)
 	}
@@ -78,7 +89,7 @@ VALUES (?, ?, ?, ?, 0, ?);
 
 func (s *SQLiteStore) ListDevices(ctx context.Context) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, user_id, name, source_type, api_key, created_at, updated_at, last_seen_at
+SELECT id, user_id, name, source_type, api_key_hash, api_key_preview, created_at, updated_at, last_seen_at
 FROM devices
 ORDER BY id ASC;
 `)
@@ -98,7 +109,8 @@ ORDER BY id ASC;
 			&d.UserID,
 			&d.Name,
 			&d.SourceType,
-			&d.APIKey,
+			&d.APIKeyHash,
+			&d.APIKeyPreview,
 			&createdAtRaw,
 			&updatedAtRaw,
 			&lastSeenAtRaw,
@@ -133,11 +145,15 @@ func (s *SQLiteStore) GetDeviceByAPIKey(ctx context.Context, apiKey string) (Dev
 	}
 
 	var id int64
+	apiKeyHash := hashDeviceAPIKey(key)
+	if apiKeyHash == "" {
+		return Device{}, ErrDeviceNotFound
+	}
 	err := s.db.QueryRowContext(ctx, `
 SELECT id
 FROM devices
-WHERE api_key = ?;
-`, key).Scan(
+WHERE api_key_hash = ?;
+`, apiKeyHash).Scan(
 		&id,
 	)
 	if err != nil {
@@ -159,7 +175,7 @@ func (s *SQLiteStore) GetDeviceByID(ctx context.Context, id int64) (Device, erro
 	var updatedAtRaw string
 	var lastSeenAtRaw sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, name, source_type, api_key, created_at, updated_at, last_seen_at
+SELECT id, user_id, name, source_type, api_key_hash, api_key_preview, created_at, updated_at, last_seen_at
 FROM devices
 WHERE id = ?;
 `, id).Scan(
@@ -167,7 +183,8 @@ WHERE id = ?;
 		&d.UserID,
 		&d.Name,
 		&d.SourceType,
-		&d.APIKey,
+		&d.APIKeyHash,
+		&d.APIKeyPreview,
 		&createdAtRaw,
 		&updatedAtRaw,
 		&lastSeenAtRaw,
@@ -209,13 +226,22 @@ func (s *SQLiteStore) RotateDeviceAPIKey(ctx context.Context, id int64, newAPIKe
 	if key == "" {
 		return Device{}, fmt.Errorf("new api key is required")
 	}
+	apiKeyHash := hashDeviceAPIKey(key)
+	if apiKeyHash == "" {
+		return Device{}, fmt.Errorf("new api key is required")
+	}
+	apiKeyPreview := buildAPIKeyPreview(key)
+	apiKeySentinel, err := generateAPIKeySentinel()
+	if err != nil {
+		return Device{}, err
+	}
 
 	nowUTC := time.Now().UTC().Format(time.RFC3339Nano)
 	result, err := s.db.ExecContext(ctx, `
 UPDATE devices
-SET api_key = ?, updated_at = ?
+SET api_key = ?, api_key_hash = ?, api_key_preview = ?, updated_at = ?
 WHERE id = ?;
-`, key, nowUTC, id)
+`, apiKeySentinel, apiKeyHash, apiKeyPreview, nowUTC, id)
 	if err != nil {
 		return Device{}, fmt.Errorf("rotate device api key: %w", err)
 	}

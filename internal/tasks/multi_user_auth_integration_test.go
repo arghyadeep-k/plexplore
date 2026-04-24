@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"plexplore/internal/api"
@@ -172,6 +174,44 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	}
 	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points rp JOIN devices d ON rp.device_id = d.id WHERE rp.user_id != d.user_id;`); got != 0 {
 		t.Fatalf("expected no raw_points/device ownership mismatches, got %d", got)
+	}
+}
+
+func TestIntegration_DeviceAPIKeyStoredHashedAtRest(t *testing.T) {
+	env := newAuthIntegrationEnv(t)
+
+	adminHash, err := api.HashPassword("adminpass")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	if _, err := env.rt.sqliteStore.CreateUser(context.Background(), store.CreateUserParams{
+		Name:         "Admin",
+		Email:        "admin@example.com",
+		PasswordHash: adminHash,
+		IsAdmin:      true,
+	}); err != nil {
+		t.Fatalf("create admin failed: %v", err)
+	}
+
+	adminSession := env.login("admin@example.com", "adminpass")
+	device := env.createDevice(adminSession, "phone-main", "plain-created-key")
+
+	ingest := env.postJSON("/api/v1/owntracks", "plain-created-key", ownTracksPayload(41.80100, -87.80100, 1713777600), webSession{})
+	if ingest.Code != http.StatusOK {
+		t.Fatalf("ingest with created key expected 200, got %d body=%s", ingest.Code, ingest.Body.String())
+	}
+
+	storedRaw := queryString(t, env.dbPath, fmt.Sprintf(`SELECT COALESCE(api_key, '') FROM devices WHERE id = %d;`, device.id))
+	storedHash := queryString(t, env.dbPath, fmt.Sprintf(`SELECT COALESCE(api_key_hash, '') FROM devices WHERE id = %d;`, device.id))
+	storedPreview := queryString(t, env.dbPath, fmt.Sprintf(`SELECT COALESCE(api_key_preview, '') FROM devices WHERE id = %d;`, device.id))
+	if strings.TrimSpace(storedHash) == "" {
+		t.Fatalf("expected non-empty api_key_hash")
+	}
+	if strings.TrimSpace(storedPreview) == "" {
+		t.Fatalf("expected non-empty api_key_preview")
+	}
+	if strings.TrimSpace(storedRaw) == "plain-created-key" {
+		t.Fatalf("expected plaintext api key not stored at rest")
 	}
 }
 

@@ -132,7 +132,7 @@ func createDeviceHandler(deviceStore DeviceStore) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, deviceSecretResponseFromStore(device))
+		writeJSON(w, http.StatusCreated, deviceSecretResponseFromStore(device, apiKey))
 	}
 }
 
@@ -238,7 +238,7 @@ func rotateDeviceKeyHandler(deviceStore DeviceStore) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, deviceSecretResponseFromStore(device))
+		writeJSON(w, http.StatusOK, deviceSecretResponseFromStore(device, apiKey))
 	}
 }
 
@@ -250,14 +250,18 @@ func generateAPIKey() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func deviceSecretResponseFromStore(device store.Device) deviceSecretResponse {
+func deviceSecretResponseFromStore(device store.Device, plainAPIKey string) deviceSecretResponse {
+	preview := strings.TrimSpace(device.APIKeyPreview)
+	if preview == "" {
+		preview = maskAPIKeyPreview(plainAPIKey)
+	}
 	return deviceSecretResponse{
 		ID:            device.ID,
 		UserID:        device.UserID,
 		Name:          device.Name,
 		SourceType:    device.SourceType,
-		APIKey:        device.APIKey,
-		APIKeyPreview: maskAPIKeyPreview(device.APIKey),
+		APIKey:        plainAPIKey,
+		APIKeyPreview: preview,
 		CreatedAt:     formatDeviceTime(device.CreatedAt),
 		UpdatedAt:     formatDeviceTime(device.UpdatedAt),
 		LastSeenAt:    formatDeviceTimePtr(device.LastSeenAt),
@@ -265,12 +269,16 @@ func deviceSecretResponseFromStore(device store.Device) deviceSecretResponse {
 }
 
 func devicePublicResponseFromStore(device store.Device) devicePublicResponse {
+	preview := strings.TrimSpace(device.APIKeyPreview)
+	if preview == "" {
+		preview = maskAPIKeyPreview(device.APIKey)
+	}
 	return devicePublicResponse{
 		ID:            device.ID,
 		UserID:        device.UserID,
 		Name:          device.Name,
 		SourceType:    device.SourceType,
-		APIKeyPreview: maskAPIKeyPreview(device.APIKey),
+		APIKeyPreview: preview,
 		CreatedAt:     formatDeviceTime(device.CreatedAt),
 		UpdatedAt:     formatDeviceTime(device.UpdatedAt),
 		LastSeenAt:    formatDeviceTimePtr(device.LastSeenAt),
