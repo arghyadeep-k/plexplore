@@ -15,11 +15,11 @@ import (
 
 type VisitSchedulerStore interface {
 	ListDevices(rctx context.Context) ([]store.Device, error)
-	RebuildVisitsForDeviceRange(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error)
-	GetVisitGenerationState(rctx context.Context, deviceName string) (store.VisitGenerationState, bool, error)
-	UpsertVisitGenerationState(rctx context.Context, deviceName string, lastProcessedSeq uint64) error
-	GetMaxPointSeqForDevice(rctx context.Context, deviceName string) (uint64, bool, error)
-	GetPointTimestampForDeviceSeq(rctx context.Context, deviceName string, seq uint64) (time.Time, bool, error)
+	RebuildVisitsForDeviceRange(rctx context.Context, deviceID int64, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error)
+	GetVisitGenerationState(rctx context.Context, deviceID int64) (store.VisitGenerationState, bool, error)
+	UpsertVisitGenerationState(rctx context.Context, deviceID int64, lastProcessedSeq uint64) error
+	GetMaxPointSeqForDevice(rctx context.Context, deviceID int64) (uint64, bool, error)
+	GetPointTimestampForDeviceSeq(rctx context.Context, deviceID int64, seq uint64) (time.Time, bool, error)
 }
 
 type VisitSchedulerConfig struct {
@@ -152,19 +152,18 @@ func (s *VisitScheduler) runOnce(ctx context.Context) (VisitSchedulerRunResult, 
 	if err != nil {
 		return VisitSchedulerRunResult{}, err
 	}
-	deviceNames := uniqueSortedDeviceNames(devices)
-	if len(deviceNames) == 0 {
+	deviceBatch := s.selectDeviceBatch(sortedUniqueDevicesByID(devices))
+	if len(deviceBatch) == 0 {
 		return VisitSchedulerRunResult{}, nil
 	}
-	selected := s.selectDeviceBatch(deviceNames)
 
 	var result VisitSchedulerRunResult
-	for _, deviceName := range selected {
+	for _, device := range deviceBatch {
 		result.ProcessedDevices++
-		created, updated, skipped, procErr := s.processDevice(ctx, deviceName)
+		created, updated, skipped, procErr := s.processDevice(ctx, device)
 		if procErr != nil {
 			result.Errors++
-			log.Printf("visit scheduler device=%s error: %v", deviceName, procErr)
+			log.Printf("visit scheduler device_id=%d name=%q error: %v", device.ID, device.Name, procErr)
 			continue
 		}
 		if skipped {
@@ -179,8 +178,12 @@ func (s *VisitScheduler) runOnce(ctx context.Context) (VisitSchedulerRunResult, 
 	return result, nil
 }
 
-func (s *VisitScheduler) processDevice(ctx context.Context, deviceName string) (created int, updated bool, skipped bool, err error) {
-	maxSeq, hasPoints, err := s.store.GetMaxPointSeqForDevice(ctx, deviceName)
+func (s *VisitScheduler) processDevice(ctx context.Context, device store.Device) (created int, updated bool, skipped bool, err error) {
+	if device.ID <= 0 {
+		return 0, false, true, nil
+	}
+
+	maxSeq, hasPoints, err := s.store.GetMaxPointSeqForDevice(ctx, device.ID)
 	if err != nil {
 		return 0, false, false, err
 	}
@@ -188,7 +191,7 @@ func (s *VisitScheduler) processDevice(ctx context.Context, deviceName string) (
 		return 0, false, true, nil
 	}
 
-	state, ok, err := s.store.GetVisitGenerationState(ctx, deviceName)
+	state, ok, err := s.store.GetVisitGenerationState(ctx, device.ID)
 	if err != nil {
 		return 0, false, false, err
 	}
@@ -198,7 +201,7 @@ func (s *VisitScheduler) processDevice(ctx context.Context, deviceName string) (
 
 	var fromUTC *time.Time
 	if ok && state.LastProcessedSeq > 0 {
-		ts, found, tsErr := s.store.GetPointTimestampForDeviceSeq(ctx, deviceName, state.LastProcessedSeq)
+		ts, found, tsErr := s.store.GetPointTimestampForDeviceSeq(ctx, device.ID, state.LastProcessedSeq)
 		if tsErr != nil {
 			return 0, false, false, tsErr
 		}
@@ -208,47 +211,51 @@ func (s *VisitScheduler) processDevice(ctx context.Context, deviceName string) (
 		}
 	}
 
-	created, err = s.store.RebuildVisitsForDeviceRange(ctx, deviceName, fromUTC, nil, s.cfg.DetectConfig)
+	created, err = s.store.RebuildVisitsForDeviceRange(ctx, device.ID, fromUTC, nil, s.cfg.DetectConfig)
 	if err != nil {
 		return 0, false, false, err
 	}
-	if err := s.store.UpsertVisitGenerationState(ctx, deviceName, maxSeq); err != nil {
+	if err := s.store.UpsertVisitGenerationState(ctx, device.ID, maxSeq); err != nil {
 		return 0, false, false, err
 	}
 	return created, true, false, nil
 }
 
-func uniqueSortedDeviceNames(devices []store.Device) []string {
-	seen := make(map[string]struct{}, len(devices))
-	out := make([]string, 0, len(devices))
+func sortedUniqueDevicesByID(devices []store.Device) []store.Device {
+	seen := make(map[int64]struct{}, len(devices))
+	out := make([]store.Device, 0, len(devices))
 	for _, d := range devices {
-		name := strings.TrimSpace(d.Name)
-		if name == "" {
+		if d.ID <= 0 {
 			continue
 		}
-		if _, ok := seen[name]; ok {
+		if _, ok := seen[d.ID]; ok {
 			continue
 		}
-		seen[name] = struct{}{}
-		out = append(out, name)
+		seen[d.ID] = struct{}{}
+		out = append(out, d)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID == out[j].ID {
+			return strings.TrimSpace(out[i].Name) < strings.TrimSpace(out[j].Name)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
-func (s *VisitScheduler) selectDeviceBatch(deviceNames []string) []string {
-	if len(deviceNames) <= s.cfg.DeviceBatchSize {
-		return deviceNames
+func (s *VisitScheduler) selectDeviceBatch(devices []store.Device) []store.Device {
+	if len(devices) <= s.cfg.DeviceBatchSize {
+		return devices
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	start := s.roundRobinStart % len(deviceNames)
-	batch := make([]string, 0, s.cfg.DeviceBatchSize)
+	start := s.roundRobinStart % len(devices)
+	batch := make([]store.Device, 0, s.cfg.DeviceBatchSize)
 	for i := 0; i < s.cfg.DeviceBatchSize; i++ {
-		idx := (start + i) % len(deviceNames)
-		batch = append(batch, deviceNames[idx])
+		idx := (start + i) % len(devices)
+		batch = append(batch, devices[idx])
 	}
-	s.roundRobinStart = (start + s.cfg.DeviceBatchSize) % len(deviceNames)
+	s.roundRobinStart = (start + s.cfg.DeviceBatchSize) % len(devices)
 	return batch
 }

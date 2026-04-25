@@ -11,7 +11,7 @@ import (
 )
 
 type schedulerRebuildCall struct {
-	deviceID string
+	deviceID int64
 	fromUTC  *time.Time
 	toUTC    *time.Time
 	cfg      visits.Config
@@ -22,23 +22,21 @@ type fakeVisitSchedulerStore struct {
 
 	devices []store.Device
 
-	maxSeqByDevice  map[string]uint64
-	tsByDeviceSeq   map[string]map[uint64]time.Time
-	stateByDevice   map[string]store.VisitGenerationState
-	createdByDevice map[string]int
-
-	rebuildCalls []schedulerRebuildCall
-
-	rebuildStarted chan struct{}
-	blockRebuild   chan struct{}
+	maxSeqByDevice   map[int64]uint64
+	tsByDeviceSeq    map[int64]map[uint64]time.Time
+	stateByDevice    map[int64]store.VisitGenerationState
+	createdByDevice  map[int64]int
+	rebuildCalls     []schedulerRebuildCall
+	rebuildStartedCh chan struct{}
+	blockRebuildCh   chan struct{}
 }
 
 func newFakeVisitSchedulerStore() *fakeVisitSchedulerStore {
 	return &fakeVisitSchedulerStore{
-		maxSeqByDevice:  make(map[string]uint64),
-		tsByDeviceSeq:   make(map[string]map[uint64]time.Time),
-		stateByDevice:   make(map[string]store.VisitGenerationState),
-		createdByDevice: make(map[string]int),
+		maxSeqByDevice:  make(map[int64]uint64),
+		tsByDeviceSeq:   make(map[int64]map[uint64]time.Time),
+		stateByDevice:   make(map[int64]store.VisitGenerationState),
+		createdByDevice: make(map[int64]int),
 	}
 }
 
@@ -50,7 +48,7 @@ func (f *fakeVisitSchedulerStore) ListDevices(_ context.Context) ([]store.Device
 	return out, nil
 }
 
-func (f *fakeVisitSchedulerStore) RebuildVisitsForDeviceRange(_ context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error) {
+func (f *fakeVisitSchedulerStore) RebuildVisitsForDeviceRange(_ context.Context, deviceID int64, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error) {
 	f.mu.Lock()
 	f.rebuildCalls = append(f.rebuildCalls, schedulerRebuildCall{
 		deviceID: deviceID,
@@ -58,8 +56,8 @@ func (f *fakeVisitSchedulerStore) RebuildVisitsForDeviceRange(_ context.Context,
 		toUTC:    toUTC,
 		cfg:      cfg,
 	})
-	started := f.rebuildStarted
-	block := f.blockRebuild
+	started := f.rebuildStartedCh
+	block := f.blockRebuildCh
 	created := f.createdByDevice[deviceID]
 	f.mu.Unlock()
 
@@ -75,38 +73,38 @@ func (f *fakeVisitSchedulerStore) RebuildVisitsForDeviceRange(_ context.Context,
 	return created, nil
 }
 
-func (f *fakeVisitSchedulerStore) GetVisitGenerationState(_ context.Context, deviceName string) (store.VisitGenerationState, bool, error) {
+func (f *fakeVisitSchedulerStore) GetVisitGenerationState(_ context.Context, deviceID int64) (store.VisitGenerationState, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	state, ok := f.stateByDevice[deviceName]
+	state, ok := f.stateByDevice[deviceID]
 	return state, ok, nil
 }
 
-func (f *fakeVisitSchedulerStore) UpsertVisitGenerationState(_ context.Context, deviceName string, lastProcessedSeq uint64) error {
+func (f *fakeVisitSchedulerStore) UpsertVisitGenerationState(_ context.Context, deviceID int64, lastProcessedSeq uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.stateByDevice[deviceName] = store.VisitGenerationState{
-		DeviceName:       deviceName,
+	f.stateByDevice[deviceID] = store.VisitGenerationState{
+		DeviceID:         deviceID,
 		LastProcessedSeq: lastProcessedSeq,
 		UpdatedAt:        time.Now().UTC(),
 	}
 	return nil
 }
 
-func (f *fakeVisitSchedulerStore) GetMaxPointSeqForDevice(_ context.Context, deviceName string) (uint64, bool, error) {
+func (f *fakeVisitSchedulerStore) GetMaxPointSeqForDevice(_ context.Context, deviceID int64) (uint64, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	seq, ok := f.maxSeqByDevice[deviceName]
+	seq, ok := f.maxSeqByDevice[deviceID]
 	if !ok || seq == 0 {
 		return 0, false, nil
 	}
 	return seq, true, nil
 }
 
-func (f *fakeVisitSchedulerStore) GetPointTimestampForDeviceSeq(_ context.Context, deviceName string, seq uint64) (time.Time, bool, error) {
+func (f *fakeVisitSchedulerStore) GetPointTimestampForDeviceSeq(_ context.Context, deviceID int64, seq uint64) (time.Time, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	bySeq, ok := f.tsByDeviceSeq[deviceName]
+	bySeq, ok := f.tsByDeviceSeq[deviceID]
 	if !ok {
 		return time.Time{}, false, nil
 	}
@@ -134,12 +132,12 @@ func (f *fakeVisitSchedulerStore) lastRebuildCall() (schedulerRebuildCall, bool)
 
 func TestVisitSchedulerRunOnce_IncrementalProgress(t *testing.T) {
 	st := newFakeVisitSchedulerStore()
-	st.devices = []store.Device{{ID: 1, Name: "phone-main"}}
-	st.maxSeqByDevice["phone-main"] = 10
-	st.tsByDeviceSeq["phone-main"] = map[uint64]time.Time{
+	st.devices = []store.Device{{ID: 11, Name: "phone-main"}}
+	st.maxSeqByDevice[11] = 10
+	st.tsByDeviceSeq[11] = map[uint64]time.Time{
 		10: time.Date(2026, 4, 24, 10, 0, 0, 0, time.UTC),
 	}
-	st.createdByDevice["phone-main"] = 2
+	st.createdByDevice[11] = 2
 
 	s := NewVisitScheduler(st, VisitSchedulerConfig{
 		Enabled:         true,
@@ -162,7 +160,7 @@ func TestVisitSchedulerRunOnce_IncrementalProgress(t *testing.T) {
 	if got := st.rebuildCallCount(); got != 1 {
 		t.Fatalf("expected one rebuild call after first run, got %d", got)
 	}
-	state, ok, err := st.GetVisitGenerationState(context.Background(), "phone-main")
+	state, ok, err := st.GetVisitGenerationState(context.Background(), 11)
 	if err != nil {
 		t.Fatalf("GetVisitGenerationState failed: %v", err)
 	}
@@ -181,9 +179,8 @@ func TestVisitSchedulerRunOnce_IncrementalProgress(t *testing.T) {
 		t.Fatalf("expected no additional rebuild call when no new points, got %d calls", got)
 	}
 
-	st.maxSeqByDevice["phone-main"] = 12
-	st.tsByDeviceSeq["phone-main"][10] = time.Date(2026, 4, 24, 10, 0, 0, 0, time.UTC)
-	st.createdByDevice["phone-main"] = 1
+	st.maxSeqByDevice[11] = 12
+	st.createdByDevice[11] = 1
 
 	result3, err := s.RunOnce(context.Background())
 	if err != nil {
@@ -210,11 +207,11 @@ func TestVisitSchedulerRunOnce_IncrementalProgress(t *testing.T) {
 
 func TestVisitSchedulerRunOnce_NoOverlapConcurrentRuns(t *testing.T) {
 	st := newFakeVisitSchedulerStore()
-	st.devices = []store.Device{{ID: 1, Name: "phone-main"}}
-	st.maxSeqByDevice["phone-main"] = 3
-	st.createdByDevice["phone-main"] = 1
-	st.rebuildStarted = make(chan struct{}, 1)
-	st.blockRebuild = make(chan struct{})
+	st.devices = []store.Device{{ID: 11, Name: "phone-main"}}
+	st.maxSeqByDevice[11] = 3
+	st.createdByDevice[11] = 1
+	st.rebuildStartedCh = make(chan struct{}, 1)
+	st.blockRebuildCh = make(chan struct{})
 
 	s := NewVisitScheduler(st, VisitSchedulerConfig{Enabled: true, Interval: time.Minute})
 
@@ -225,7 +222,7 @@ func TestVisitSchedulerRunOnce_NoOverlapConcurrentRuns(t *testing.T) {
 	}()
 
 	select {
-	case <-st.rebuildStarted:
+	case <-st.rebuildStartedCh:
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for first rebuild to start")
 	}
@@ -238,7 +235,7 @@ func TestVisitSchedulerRunOnce_NoOverlapConcurrentRuns(t *testing.T) {
 		t.Fatalf("expected overlapping run to be skipped, got %+v", result2)
 	}
 
-	close(st.blockRebuild)
+	close(st.blockRebuildCh)
 	select {
 	case err := <-errCh:
 		if err != nil {
@@ -255,9 +252,9 @@ func TestVisitSchedulerRunOnce_NoOverlapConcurrentRuns(t *testing.T) {
 
 func TestVisitSchedulerStart_TriggersBackgroundRun(t *testing.T) {
 	st := newFakeVisitSchedulerStore()
-	st.devices = []store.Device{{ID: 1, Name: "phone-main"}}
-	st.maxSeqByDevice["phone-main"] = 1
-	st.createdByDevice["phone-main"] = 1
+	st.devices = []store.Device{{ID: 11, Name: "phone-main"}}
+	st.maxSeqByDevice[11] = 1
+	st.createdByDevice[11] = 1
 
 	s := NewVisitScheduler(st, VisitSchedulerConfig{
 		Enabled:  true,
@@ -277,4 +274,41 @@ func TestVisitSchedulerStart_TriggersBackgroundRun(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected background scheduler to trigger at least one rebuild call, got %d", st.rebuildCallCount())
+}
+
+func TestVisitScheduler_DuplicateDeviceNamesAcrossUsersRemainIsolated(t *testing.T) {
+	st := newFakeVisitSchedulerStore()
+	st.devices = []store.Device{
+		{ID: 11, UserID: 100, Name: "phone"},
+		{ID: 22, UserID: 200, Name: "phone"},
+	}
+	st.maxSeqByDevice[11] = 5
+	st.maxSeqByDevice[22] = 7
+	st.createdByDevice[11] = 1
+	st.createdByDevice[22] = 2
+
+	s := NewVisitScheduler(st, VisitSchedulerConfig{
+		Enabled:         true,
+		Interval:        time.Minute,
+		DeviceBatchSize: 10,
+	})
+
+	result, err := s.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce failed: %v", err)
+	}
+	if result.ProcessedDevices != 2 || result.UpdatedDevices != 2 {
+		t.Fatalf("expected both same-name devices processed independently, got %+v", result)
+	}
+	if got := st.rebuildCallCount(); got != 2 {
+		t.Fatalf("expected two rebuild calls (one per device id), got %d", got)
+	}
+	stateA, okA, _ := st.GetVisitGenerationState(context.Background(), 11)
+	stateB, okB, _ := st.GetVisitGenerationState(context.Background(), 22)
+	if !okA || !okB {
+		t.Fatalf("expected per-device watermarks for both devices, got okA=%t okB=%t", okA, okB)
+	}
+	if stateA.LastProcessedSeq != 5 || stateB.LastProcessedSeq != 7 {
+		t.Fatalf("unexpected per-device watermark states: A=%+v B=%+v", stateA, stateB)
+	}
 }

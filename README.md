@@ -396,12 +396,13 @@ Visit generation workflow:
 - visits are generated on-demand via `POST /api/v1/visits/generate`
 - endpoints require signed-in user session
 - generate accepts only devices owned by current user
-- requires `device_id`
+- requires `device_id` (stable numeric device row id)
 - supports bounded window with optional `from` / `to` RFC3339 params
 - if `from` / `to` are omitted, generation defaults to a recent 14-day window
 - generated visits can be listed via `GET /api/v1/visits` with optional
-  `device_id`, `from`, `to`, and `limit` filters
+  `device_id` (numeric), `from`, `to`, and `limit` filters
 - visit list results are scoped to current user's devices only
+- device names remain display labels only and are not used as visit identity boundaries
 - optional tuning params:
 - `min_dwell` (duration, default `15m`)
 - `max_radius_m` (meters, default `35`)
@@ -420,16 +421,16 @@ Examples:
 
 ```bash
 # generate visits for a device in the default recent window
-curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=phone-main"
+curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=1"
 
 # generate visits for a bounded range
-curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&min_dwell=20m&max_radius_m=40"
+curl -X POST "http://localhost:8080/api/v1/visits/generate?device_id=1&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&min_dwell=20m&max_radius_m=40"
 
 # list generated visits
-curl -sS "http://localhost:8080/api/v1/visits?device_id=phone-main&limit=100"
+curl -sS "http://localhost:8080/api/v1/visits?device_id=1&limit=100"
 
 # list visits for a bounded range
-curl -sS "http://localhost:8080/api/v1/visits?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&limit=100"
+curl -sS "http://localhost:8080/api/v1/visits?device_id=1&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&limit=100"
 ```
 
 ## GeoJSON Export

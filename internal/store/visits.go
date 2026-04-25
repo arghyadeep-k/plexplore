@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 // Visit is the persisted visit projection.
 type Visit struct {
 	ID          int64
+	DeviceRowID int64
 	DeviceID    string
 	StartAt     time.Time
 	EndAt       time.Time
@@ -21,30 +21,20 @@ type Visit struct {
 	PointCount  int
 }
 
-// RebuildVisitsForDevice detects visits from stored points for one device and
-// rewrites that device's visit rows deterministically.
-func (s *SQLiteStore) RebuildVisitsForDevice(ctx context.Context, deviceID string, cfg visits.Config) (int, error) {
+// RebuildVisitsForDeviceID detects visits from stored points for one stable
+// device row id and rewrites that device's visit rows deterministically.
+func (s *SQLiteStore) RebuildVisitsForDeviceID(ctx context.Context, deviceID int64, cfg visits.Config) (int, error) {
 	return s.RebuildVisitsForDeviceRange(ctx, deviceID, nil, nil, cfg)
 }
 
-// RebuildVisitsForDeviceRange detects visits for a bounded device/time window
+// RebuildVisitsForDeviceRange detects visits for a bounded device-id/time window
 // and rewrites only visit rows whose start_at falls inside the same window.
-func (s *SQLiteStore) RebuildVisitsForDeviceRange(ctx context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error) {
-	name := strings.TrimSpace(deviceID)
-	if name == "" {
+func (s *SQLiteStore) RebuildVisitsForDeviceRange(ctx context.Context, deviceID int64, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error) {
+	if deviceID <= 0 {
 		return 0, fmt.Errorf("device_id is required")
 	}
 
-	deviceRowID, err := s.lookupDeviceRowIDByName(ctx, name)
-	if err != nil {
-		return 0, err
-	}
-
-	points, err := s.listPointsForVisitDetection(ctx, ExportPointFilter{
-		DeviceID: name,
-		FromUTC:  fromUTC,
-		ToUTC:    toUTC,
-	})
+	points, err := s.listPointsForVisitDetectionByDeviceID(ctx, deviceID, fromUTC, toUTC)
 	if err != nil {
 		return 0, fmt.Errorf("list points for visit detection: %w", err)
 	}
@@ -68,7 +58,7 @@ func (s *SQLiteStore) RebuildVisitsForDeviceRange(ctx context.Context, deviceID 
 	}()
 
 	deleteSQL := `DELETE FROM visits WHERE device_id = ?`
-	args := []any{deviceRowID}
+	args := []any{deviceID}
 	if fromUTC != nil {
 		deleteSQL += ` AND start_at >= ?`
 		args = append(args, fromUTC.UTC().Format(time.RFC3339Nano))
@@ -94,7 +84,7 @@ VALUES (?, ?, ?, ?, ?, ?);
 	for _, visit := range detected {
 		if _, err := stmt.ExecContext(
 			ctx,
-			deviceRowID,
+			deviceID,
 			visit.StartAt.UTC().Format(time.RFC3339Nano),
 			visit.EndAt.UTC().Format(time.RFC3339Nano),
 			visit.CentroidLat,
@@ -111,31 +101,24 @@ VALUES (?, ?, ?, ?, ?, ?);
 	return len(detected), nil
 }
 
-func (s *SQLiteStore) listPointsForVisitDetection(ctx context.Context, filter ExportPointFilter) ([]RecentPoint, error) {
+func (s *SQLiteStore) listPointsForVisitDetectionByDeviceID(ctx context.Context, deviceID int64, fromUTC, toUTC *time.Time) ([]RecentPoint, error) {
 	baseSQL := `
 SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
 JOIN devices d ON d.id = rp.device_id
 `
-	whereParts := make([]string, 0, 3)
-	args := make([]any, 0, 3)
+	whereParts := []string{"rp.device_id = ?"}
+	args := []any{deviceID}
 
-	device := strings.TrimSpace(filter.DeviceID)
-	if device != "" {
-		whereParts = append(whereParts, "d.name = ?")
-		args = append(args, device)
-	}
-	if filter.FromUTC != nil {
+	if fromUTC != nil {
 		whereParts = append(whereParts, "rp.timestamp_utc >= ?")
-		args = append(args, filter.FromUTC.UTC().Format(time.RFC3339Nano))
+		args = append(args, fromUTC.UTC().Format(time.RFC3339Nano))
 	}
-	if filter.ToUTC != nil {
+	if toUTC != nil {
 		whereParts = append(whereParts, "rp.timestamp_utc <= ?")
-		args = append(args, filter.ToUTC.UTC().Format(time.RFC3339Nano))
+		args = append(args, toUTC.UTC().Format(time.RFC3339Nano))
 	}
-	if len(whereParts) > 0 {
-		baseSQL += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
-	}
+	baseSQL += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
 	baseSQL += "ORDER BY rp.timestamp_utc ASC, rp.seq ASC;"
 
 	rows, err := s.db.QueryContext(ctx, baseSQL, args...)
@@ -171,7 +154,10 @@ JOIN devices d ON d.id = rp.device_id
 	return out, nil
 }
 
-func (s *SQLiteStore) ListVisits(ctx context.Context, deviceID string, fromUTC, toUTC *time.Time, limit int) ([]Visit, error) {
+func (s *SQLiteStore) ListVisits(ctx context.Context, userID int64, deviceID *int64, fromUTC, toUTC *time.Time, limit int) ([]Visit, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("user_id is required")
+	}
 	if limit <= 0 {
 		limit = 100
 	}
@@ -179,12 +165,11 @@ func (s *SQLiteStore) ListVisits(ctx context.Context, deviceID string, fromUTC, 
 		limit = 5000
 	}
 
-	whereParts := make([]string, 0, 3)
-	args := make([]any, 0, 4)
-	device := strings.TrimSpace(deviceID)
-	if device != "" {
-		whereParts = append(whereParts, "d.name = ?")
-		args = append(args, device)
+	whereParts := []string{"d.user_id = ?"}
+	args := []any{userID}
+	if deviceID != nil {
+		whereParts = append(whereParts, "v.device_id = ?")
+		args = append(args, *deviceID)
 	}
 	if fromUTC != nil {
 		whereParts = append(whereParts, "v.start_at >= ?")
@@ -196,13 +181,11 @@ func (s *SQLiteStore) ListVisits(ctx context.Context, deviceID string, fromUTC, 
 	}
 
 	query := `
-SELECT v.id, d.name, v.start_at, v.end_at, v.centroid_lat, v.centroid_lon, v.point_count
+SELECT v.id, v.device_id, d.name, v.start_at, v.end_at, v.centroid_lat, v.centroid_lon, v.point_count
 FROM visits v
 JOIN devices d ON d.id = v.device_id
 `
-	if len(whereParts) > 0 {
-		query += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
-	}
+	query += "WHERE " + strings.Join(whereParts, " AND ") + "\n"
 	query += "ORDER BY v.start_at ASC, v.id ASC\nLIMIT ?;"
 	args = append(args, limit)
 
@@ -219,6 +202,7 @@ JOIN devices d ON d.id = v.device_id
 		var endRaw string
 		if err := rows.Scan(
 			&v.ID,
+			&v.DeviceRowID,
 			&v.DeviceID,
 			&startRaw,
 			&endRaw,
@@ -240,22 +224,4 @@ JOIN devices d ON d.id = v.device_id
 		return nil, fmt.Errorf("iterate visits: %w", err)
 	}
 	return out, nil
-}
-
-func (s *SQLiteStore) lookupDeviceRowIDByName(ctx context.Context, name string) (int64, error) {
-	var id int64
-	err := s.db.QueryRowContext(ctx, `
-SELECT id
-FROM devices
-WHERE name = ?
-ORDER BY id ASC
-LIMIT 1;
-`, name).Scan(&id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, fmt.Errorf("device not found: %s", name)
-		}
-		return 0, fmt.Errorf("lookup device row id: %w", err)
-	}
-	return id, nil
 }

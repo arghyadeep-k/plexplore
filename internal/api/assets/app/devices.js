@@ -85,9 +85,12 @@
     }
     const options = ["<option value=''>All devices</option>"];
     for (const d of devices) {
+      if (!d || !d.id) {
+        continue;
+      }
       options.push(
         "<option value='" +
-          window.PlexploreUI.escapeHTML(d.name || "") +
+          String(d.id) +
           "'>" +
           window.PlexploreUI.escapeHTML(d.name || "") +
           "</option>",
@@ -237,16 +240,16 @@
   }
 
   function generateVisits() {
-    const selectedDevice = (document.getElementById("visit_device_select").value || "").trim();
+    const selectedDevice = Number((document.getElementById("visit_device_select").value || "").trim());
     const fromDate = (document.getElementById("visit_from_date").value || "").trim();
     const toDate = (document.getElementById("visit_to_date").value || "").trim();
     const deviceIDs = [];
-    if (selectedDevice) {
+    if (Number.isFinite(selectedDevice) && selectedDevice > 0) {
       deviceIDs.push(selectedDevice);
     } else {
       devicesCache.forEach(function (d) {
-        if (d && d.name) {
-          deviceIDs.push(String(d.name));
+        if (d && Number.isFinite(Number(d.id)) && Number(d.id) > 0) {
+          deviceIDs.push(Number(d.id));
         }
       });
     }

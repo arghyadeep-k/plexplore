@@ -26,7 +26,14 @@
 
   function buildPointsQuery() {
     const params = new URLSearchParams();
-    const device = document.getElementById("device_select").value.trim();
+    const select = document.getElementById("device_select");
+    const deviceIDRaw = select.value.trim();
+    let deviceName = "";
+    if (deviceIDRaw) {
+      const selected = select.options[select.selectedIndex];
+      deviceName = (selected && selected.getAttribute("data-device-name")) || "";
+      deviceName = deviceName.trim();
+    }
     const fromDate = document.getElementById("date_from").value.trim();
     const toDate = document.getElementById("date_to").value.trim();
     const limitRaw = document.getElementById("limit").value.trim();
@@ -49,8 +56,8 @@
       simplifyMaxPoints = 1000;
     }
 
-    if (device) {
-      params.set("device_id", device);
+    if (deviceName) {
+      params.set("device_id", deviceName);
     }
     if (fromDate) {
       params.set("from", dayStartRFC3339(fromDate));
@@ -182,11 +189,19 @@
         }
         const options = ["<option value=''>All devices</option>"];
         for (const d of devices) {
-          if (!d || !d.name) {
+          if (!d || !d.name || !d.id) {
             continue;
           }
-          const escaped = window.PlexploreUI.escapeHTML(d.name);
-          options.push("<option value='" + escaped + "'>" + escaped + "</option>");
+          const escapedName = window.PlexploreUI.escapeHTML(d.name);
+          options.push(
+            "<option value='" +
+              String(d.id) +
+              "' data-device-name='" +
+              escapedName +
+              "'>" +
+              escapedName +
+              "</option>",
+          );
         }
         select.innerHTML = options.join("");
       })
@@ -219,7 +234,7 @@
             "visit #" +
               v.id +
               "<br>device: " +
-              window.PlexploreUI.escapeHTML(v.device_id || "") +
+              window.PlexploreUI.escapeHTML(v.device_name || String(v.device_id || "")) +
               "<br>place: " +
               window.PlexploreUI.escapeHTML(v.place_label || "") +
               "<br>start: " +

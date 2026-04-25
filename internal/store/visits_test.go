@@ -25,6 +25,15 @@ func visitRecord(seq uint64, deviceID, hash string, ts time.Time, lat, lon float
 	}
 }
 
+func lookupDeviceIDForUser(t *testing.T, s *SQLiteStore, userID int64, name string) int64 {
+	t.Helper()
+	var id int64
+	if err := s.db.QueryRow(`SELECT id FROM devices WHERE user_id = ? AND name = ? ORDER BY id ASC LIMIT 1;`, userID, name).Scan(&id); err != nil {
+		t.Fatalf("lookup device id failed: %v", err)
+	}
+	return id
+}
+
 func TestVisitDetection_StationaryPointsBecomeVisit(t *testing.T) {
 	s := openStoreWithSchema(t)
 	base := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
@@ -38,7 +47,8 @@ func TestVisitDetection_StationaryPointsBecomeVisit(t *testing.T) {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
 
-	created, err := s.RebuildVisitsForDevice(context.Background(), "d1", visits.Config{
+	deviceID := lookupDeviceIDForUser(t, s, 1, "d1")
+	created, err := s.RebuildVisitsForDeviceID(context.Background(), deviceID, visits.Config{
 		MinDwell:        10 * time.Minute,
 		MaxRadiusMeters: 30,
 	})
@@ -49,7 +59,7 @@ func TestVisitDetection_StationaryPointsBecomeVisit(t *testing.T) {
 		t.Fatalf("expected 1 visit, got %d", created)
 	}
 
-	out, err := s.ListVisits(context.Background(), "d1", nil, nil, 10)
+	out, err := s.ListVisits(context.Background(), 1, &deviceID, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("ListVisits failed: %v", err)
 	}
@@ -74,7 +84,8 @@ func TestVisitDetection_MovingPointsDoNotBecomeVisit(t *testing.T) {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
 
-	created, err := s.RebuildVisitsForDevice(context.Background(), "d1", visits.Config{
+	deviceID := lookupDeviceIDForUser(t, s, 1, "d1")
+	created, err := s.RebuildVisitsForDeviceID(context.Background(), deviceID, visits.Config{
 		MinDwell:        10 * time.Minute,
 		MaxRadiusMeters: 50,
 	})
@@ -85,7 +96,7 @@ func TestVisitDetection_MovingPointsDoNotBecomeVisit(t *testing.T) {
 		t.Fatalf("expected 0 visits, got %d", created)
 	}
 
-	out, err := s.ListVisits(context.Background(), "d1", nil, nil, 10)
+	out, err := s.ListVisits(context.Background(), 1, &deviceID, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("ListVisits failed: %v", err)
 	}
@@ -111,7 +122,8 @@ func TestVisitDetection_TwoVisitsNotMerged(t *testing.T) {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
 
-	created, err := s.RebuildVisitsForDevice(context.Background(), "d1", visits.Config{
+	deviceID := lookupDeviceIDForUser(t, s, 1, "d1")
+	created, err := s.RebuildVisitsForDeviceID(context.Background(), deviceID, visits.Config{
 		MinDwell:        10 * time.Minute,
 		MaxRadiusMeters: 40,
 	})
@@ -122,7 +134,7 @@ func TestVisitDetection_TwoVisitsNotMerged(t *testing.T) {
 		t.Fatalf("expected 2 visits, got %d", created)
 	}
 
-	out, err := s.ListVisits(context.Background(), "d1", nil, nil, 10)
+	out, err := s.ListVisits(context.Background(), 1, &deviceID, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("ListVisits failed: %v", err)
 	}
@@ -154,7 +166,8 @@ func TestVisitDetection_RangeBoundedGeneration(t *testing.T) {
 
 	from := base.Add(24 * time.Hour)
 	to := base.Add(24*time.Hour + 1*time.Hour)
-	created, err := s.RebuildVisitsForDeviceRange(context.Background(), "d1", &from, &to, visits.Config{
+	deviceID := lookupDeviceIDForUser(t, s, 1, "d1")
+	created, err := s.RebuildVisitsForDeviceRange(context.Background(), deviceID, &from, &to, visits.Config{
 		MinDwell:        10 * time.Minute,
 		MaxRadiusMeters: 40,
 	})
@@ -165,7 +178,7 @@ func TestVisitDetection_RangeBoundedGeneration(t *testing.T) {
 		t.Fatalf("expected 1 bounded visit, got %d", created)
 	}
 
-	out, err := s.ListVisits(context.Background(), "d1", nil, nil, 10)
+	out, err := s.ListVisits(context.Background(), 1, &deviceID, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("ListVisits failed: %v", err)
 	}
@@ -193,7 +206,8 @@ func TestListVisits_FilterByTimeRange(t *testing.T) {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
 
-	if _, err := s.RebuildVisitsForDevice(context.Background(), "d1", visits.Config{
+	deviceID := lookupDeviceIDForUser(t, s, 1, "d1")
+	if _, err := s.RebuildVisitsForDeviceID(context.Background(), deviceID, visits.Config{
 		MinDwell:        10 * time.Minute,
 		MaxRadiusMeters: 40,
 	}); err != nil {
@@ -202,7 +216,7 @@ func TestListVisits_FilterByTimeRange(t *testing.T) {
 
 	from := base.Add(20 * time.Hour)
 	to := base.Add(28 * time.Hour)
-	out, err := s.ListVisits(context.Background(), "d1", &from, &to, 10)
+	out, err := s.ListVisits(context.Background(), 1, &deviceID, &from, &to, 10)
 	if err != nil {
 		t.Fatalf("ListVisits failed: %v", err)
 	}
@@ -211,6 +225,126 @@ func TestListVisits_FilterByTimeRange(t *testing.T) {
 	}
 	if out[0].StartAt.Before(from) || out[0].StartAt.After(to) {
 		t.Fatalf("expected visit start within range, got %v", out[0].StartAt)
+	}
+}
+
+func TestVisitIsolation_SameDeviceNameAcrossUsers(t *testing.T) {
+	s := openStoreWithSchema(t)
+	base := time.Date(2026, 4, 23, 8, 0, 0, 0, time.UTC)
+
+	if _, err := s.db.Exec(`
+INSERT INTO users(id, name, email, password_hash, is_admin, updated_at)
+VALUES
+    (10, 'u1', 'u1@example.com', 'hash-u1-password', 0, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    (11, 'u2', 'u2@example.com', 'hash-u2-password', 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+`); err != nil {
+		t.Fatalf("insert users failed: %v", err)
+	}
+
+	if _, err := s.InsertSpoolBatch([]ingest.SpoolRecord{
+		visitRecord(100, "phone", "u1-a1", base, 41.00000, -87.00000),
+		visitRecord(101, "phone", "u1-a2", base.Add(7*time.Minute), 41.00001, -87.00001),
+		visitRecord(102, "phone", "u1-a3", base.Add(15*time.Minute), 41.00002, -87.00000),
+	}); err != nil {
+		t.Fatalf("insert user1 points failed: %v", err)
+	}
+
+	if _, err := s.InsertSpoolBatch([]ingest.SpoolRecord{
+		{
+			Seq:        200,
+			DeviceID:   "phone",
+			ReceivedAt: base,
+			Point: ingest.CanonicalPoint{
+				UserID:       "11",
+				DeviceID:     "phone",
+				SourceType:   "owntracks",
+				TimestampUTC: base,
+				Lat:          42.00000,
+				Lon:          -88.00000,
+				IngestHash:   "u2-a1",
+			},
+		},
+		{
+			Seq:        201,
+			DeviceID:   "phone",
+			ReceivedAt: base.Add(7 * time.Minute),
+			Point: ingest.CanonicalPoint{
+				UserID:       "11",
+				DeviceID:     "phone",
+				SourceType:   "owntracks",
+				TimestampUTC: base.Add(7 * time.Minute),
+				Lat:          42.00001,
+				Lon:          -88.00001,
+				IngestHash:   "u2-a2",
+			},
+		},
+		{
+			Seq:        202,
+			DeviceID:   "phone",
+			ReceivedAt: base.Add(15 * time.Minute),
+			Point: ingest.CanonicalPoint{
+				UserID:       "11",
+				DeviceID:     "phone",
+				SourceType:   "owntracks",
+				TimestampUTC: base.Add(15 * time.Minute),
+				Lat:          42.00002,
+				Lon:          -88.00000,
+				IngestHash:   "u2-a3",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("insert user2 points failed: %v", err)
+	}
+
+	deviceU1 := lookupDeviceIDForUser(t, s, 1, "phone")
+	deviceU2 := lookupDeviceIDForUser(t, s, 11, "phone")
+	if deviceU1 == deviceU2 {
+		t.Fatalf("expected distinct row ids for same-name devices across users, got %d", deviceU1)
+	}
+
+	if _, err := s.RebuildVisitsForDeviceID(context.Background(), deviceU1, visits.Config{
+		MinDwell:        10 * time.Minute,
+		MaxRadiusMeters: 40,
+	}); err != nil {
+		t.Fatalf("rebuild visits user1 failed: %v", err)
+	}
+	visitsU1, err := s.ListVisits(context.Background(), 1, &deviceU1, nil, nil, 10)
+	if err != nil {
+		t.Fatalf("list visits user1 failed: %v", err)
+	}
+	if len(visitsU1) != 1 {
+		t.Fatalf("expected one visit for user1, got %d", len(visitsU1))
+	}
+
+	visitsU2Before, err := s.ListVisits(context.Background(), 11, &deviceU2, nil, nil, 10)
+	if err != nil {
+		t.Fatalf("list visits user2 before generate failed: %v", err)
+	}
+	if len(visitsU2Before) != 0 {
+		t.Fatalf("expected zero visits for user2 before own generation, got %d", len(visitsU2Before))
+	}
+
+	if _, err := s.RebuildVisitsForDeviceID(context.Background(), deviceU2, visits.Config{
+		MinDwell:        10 * time.Minute,
+		MaxRadiusMeters: 40,
+	}); err != nil {
+		t.Fatalf("rebuild visits user2 failed: %v", err)
+	}
+
+	visitsU2After, err := s.ListVisits(context.Background(), 11, &deviceU2, nil, nil, 10)
+	if err != nil {
+		t.Fatalf("list visits user2 after generate failed: %v", err)
+	}
+	if len(visitsU2After) != 1 {
+		t.Fatalf("expected one visit for user2 after own generation, got %d", len(visitsU2After))
+	}
+
+	visitsU1Again, err := s.ListVisits(context.Background(), 1, &deviceU1, nil, nil, 10)
+	if err != nil {
+		t.Fatalf("list visits user1 after user2 generation failed: %v", err)
+	}
+	if len(visitsU1Again) != 1 {
+		t.Fatalf("expected user1 visits unchanged after user2 generation, got %d", len(visitsU1Again))
 	}
 }
 

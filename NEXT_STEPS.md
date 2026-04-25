@@ -1,16 +1,18 @@
 # Next Steps
 
 ## Current milestone
-Scheduled incremental visit generation integrated (optional background scheduler with persisted watermark)
+Visit isolation hardening complete (stable user/device identity for visits + scheduler watermark)
 
 ## Next 3 tasks
-1. Add authenticated status visibility for visit scheduler (last run time/result, last error) under protected `/api/v1/status`
-2. Add SQLite-backed integration test for persisted `visit_generation_state` progression across restart
-3. Add authenticated browser smoke test for `/login` -> `/ui/admin/devices` and validate create/rotate/generate CSRF flow
+1. Align points/recent/export filters to optional stable numeric device IDs (preserve compatibility where needed)
+2. Add authenticated status visibility for visit scheduler (last run/result/error) under protected `/api/v1/status`
+3. Add authenticated browser smoke test for `/login` -> `/ui/admin/devices` and validate create/rotate/generate CSRF flow with numeric visit device IDs
 
 ## Commands
 - `go test ./...`
 - `go test ./internal/tasks -run TestVisitScheduler -count=1`
+- `go test ./internal/api -run 'Test(GenerateVisitsEndpoint_SameDeviceNameAcrossUsers_IsScopedByDeviceRowID|ListVisitsEndpoint_SameDeviceNameAcrossUsers_IsScopedBySessionUser)' -count=1`
+- `go test ./internal/store -run 'TestVisitIsolation_SameDeviceNameAcrossUsers' -count=1`
 - `go test ./internal/api`
 - `go test ./internal/store`
 - `gofmt -w internal/api/*.go internal/tasks/*.go cmd/migrate/*.go`

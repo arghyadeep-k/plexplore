@@ -4235,3 +4235,65 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-24 18:35 UTC - Phase 87 (Visit Isolation by Stable Device/User Identity)
+Implemented:
+- Fixed cross-user visit isolation bug by removing runtime visit identity logic based on `devices.name`.
+- Visit store APIs now operate on stable device row IDs and authenticated user scope:
+- `RebuildVisitsForDeviceRange(... deviceID int64 ...)`
+- `ListVisits(... userID int64, deviceID *int64 ...)`
+- Visit queries now scope by `devices.user_id` and optional stable `visits.device_id`.
+- Visit generation now requires numeric `device_id` query param (stable device row ID) and validates ownership against the authenticated session user.
+- Visit list filtering now accepts numeric `device_id` and returns `device_name` as display label while preserving stable `device_id` in output.
+- Scheduler now iterates and tracks progress by stable `devices.id`:
+- removed name-based dedupe path that could merge same-name devices across users
+- watermark/progress methods now use stable `device_id`
+- Added migration `0009_visit_generation_state_device_id.sql`:
+- migrates `visit_generation_state` from `device_name` key to `device_id` key
+- backfills existing rows by joining to `devices` and preserving last processed sequence where mapping is possible
+- Updated map/admin UI visit workflows to use stable numeric device IDs for visits API calls while keeping device names as display labels.
+- Added regression coverage:
+- store test for two users with same device name and isolated visit generation/listing
+- scheduler test for same-name devices across users with independent watermark/progress
+- API tests for same-name cross-user isolation on list/generate and numeric device filter validation
+- migrator test covering 0009 backfill behavior.
+
+Architectural decisions:
+- Decision: Make visit identity boundaries stable (`user_id` + `device_id`) and treat device name strictly as display label.
+  Reason: Prevent cross-user collisions/leakage when multiple users have same device name.
+- Decision: Require numeric `device_id` for visit generate/list filters.
+  Reason: Eliminate ambiguity and avoid name-based authorization decisions.
+
+Files changed:
+- `internal/store/visits.go`
+- `internal/store/visit_generation_state.go`
+- `internal/store/visits_test.go`
+- `internal/store/migrator_test.go`
+- `internal/tasks/visit_scheduler.go`
+- `internal/tasks/visit_scheduler_test.go`
+- `internal/api/health.go`
+- `internal/api/visits.go`
+- `internal/api/visits_test.go`
+- `internal/api/assets/app/map.js`
+- `internal/api/assets/app/devices.js`
+- `migrations/0009_visit_generation_state_device_id.sql`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/visits.go internal/store/visit_generation_state.go internal/store/visits_test.go internal/store/migrator_test.go internal/tasks/visit_scheduler.go internal/tasks/visit_scheduler_test.go internal/api/health.go internal/api/visits.go internal/api/visits_test.go`
+- `go test ./...`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./internal/tasks -run TestVisit -count=1`
+
+Pending:
+- Align points/recent/export query filters to accept stable numeric device IDs (currently device-name based filters remain for those endpoints).
+- Add an authenticated browser smoke test for `/login` -> `/ui/admin/devices` -> visit generation path with CSRF + numeric device IDs.
+- Add scheduler status fields (last run/last error) to authenticated `/api/v1/status`.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
+- On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.

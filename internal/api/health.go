@@ -63,8 +63,8 @@ type PointStore interface {
 }
 
 type VisitStore interface {
-	RebuildVisitsForDeviceRange(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error)
-	ListVisits(rctx context.Context, deviceID string, fromUTC, toUTC *time.Time, limit int) ([]store.Visit, error)
+	RebuildVisitsForDeviceRange(rctx context.Context, deviceID int64, fromUTC, toUTC *time.Time, cfg visits.Config) (int, error)
+	ListVisits(rctx context.Context, userID int64, deviceID *int64, fromUTC, toUTC *time.Time, limit int) ([]store.Visit, error)
 }
 
 type VisitLabelResolver interface {

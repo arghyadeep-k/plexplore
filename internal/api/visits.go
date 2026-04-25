@@ -12,7 +12,7 @@ import (
 
 type generateVisitsResponse struct {
 	OK            bool   `json:"ok"`
-	DeviceID      string `json:"device_id"`
+	DeviceID      int64  `json:"device_id"`
 	FromUTC       string `json:"from_utc,omitempty"`
 	ToUTC         string `json:"to_utc,omitempty"`
 	CreatedVisits int    `json:"created_visits"`
@@ -20,7 +20,8 @@ type generateVisitsResponse struct {
 
 type visitResponse struct {
 	ID          int64   `json:"id"`
-	DeviceID    string  `json:"device_id"`
+	DeviceID    int64   `json:"device_id"`
+	DeviceName  string  `json:"device_name"`
 	StartAt     string  `json:"start_at"`
 	EndAt       string  `json:"end_at"`
 	CentroidLat float64 `json:"centroid_lat"`
@@ -65,18 +66,18 @@ func generateVisitsHandler(visitStore VisitStore, deviceStore DeviceStore) http.
 			return
 		}
 
-		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
-		if deviceID == "" {
+		deviceID, err := parseRequiredDeviceIDParam(r.URL.Query().Get("device_id"))
+		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "device_id is required")
 			return
 		}
 		if deviceStore != nil {
-			allowedDeviceIDs, err := currentUserAllowedDeviceIDs(r, deviceStore)
+			allowedDevices, err := currentUserAllowedDevicesByID(r, deviceStore)
 			if err != nil {
 				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
 				return
 			}
-			if _, ok := allowedDeviceIDs[deviceID]; !ok {
+			if _, ok := allowedDevices[deviceID]; !ok {
 				writeJSONError(w, http.StatusNotFound, "device not found")
 				return
 			}
@@ -135,20 +136,30 @@ func generateVisitsHandler(visitStore VisitStore, deviceStore DeviceStore) http.
 
 func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
-		allowedDeviceIDs := map[string]struct{}{}
-		if deviceStore != nil {
-			var err error
-			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
-			if err != nil {
-				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+		currentUser, ok := CurrentUserFromContext(r.Context())
+		if deviceStore != nil && !ok {
+			writeJSONError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		userID := int64(1)
+		if ok {
+			userID = currentUser.ID
+		}
+
+		deviceID, hasDeviceID, err := parseOptionalDeviceIDParam(r.URL.Query().Get("device_id"))
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if hasDeviceID && deviceStore != nil {
+			allowedDevices, allowedErr := currentUserAllowedDevicesByID(r, deviceStore)
+			if allowedErr != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(allowedErr), allowedErr.Error())
 				return
 			}
-			if deviceID != "" {
-				if _, ok := allowedDeviceIDs[deviceID]; !ok {
-					writeJSON(w, http.StatusOK, listVisitsResponse{Visits: []visitResponse{}})
-					return
-				}
+			if _, allowed := allowedDevices[deviceID]; !allowed {
+				writeJSON(w, http.StatusOK, listVisitsResponse{Visits: []visitResponse{}})
+				return
 			}
 		}
 
@@ -172,19 +183,15 @@ func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver, 
 			return
 		}
 
-		items, err := visitStore.ListVisits(r.Context(), deviceID, fromUTC, toUTC, limit)
+		var deviceIDFilter *int64
+		if hasDeviceID {
+			deviceIDFilter = &deviceID
+		}
+
+		items, err := visitStore.ListVisits(r.Context(), userID, deviceIDFilter, fromUTC, toUTC, limit)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		if deviceStore != nil {
-			filtered := make([]store.Visit, 0, len(items))
-			for _, item := range items {
-				if _, ok := allowedDeviceIDs[item.DeviceID]; ok {
-					filtered = append(filtered, item)
-				}
-			}
-			items = filtered
 		}
 
 		remainingProviderLookups := 0
@@ -200,7 +207,8 @@ func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver, 
 		for _, item := range items {
 			resp := visitResponse{
 				ID:          item.ID,
-				DeviceID:    item.DeviceID,
+				DeviceID:    item.DeviceRowID,
+				DeviceName:  item.DeviceID,
 				StartAt:     item.StartAt.UTC().Format(time.RFC3339Nano),
 				EndAt:       item.EndAt.UTC().Format(time.RFC3339Nano),
 				CentroidLat: item.CentroidLat,
@@ -226,6 +234,55 @@ func listVisitsHandler(visitStore VisitStore, labelResolver VisitLabelResolver, 
 		}
 		writeJSON(w, http.StatusOK, listVisitsResponse{Visits: out})
 	}
+}
+
+func parseRequiredDeviceIDParam(raw string) (int64, error) {
+	deviceID, hasValue, err := parseOptionalDeviceIDParam(raw)
+	if err != nil {
+		return 0, err
+	}
+	if !hasValue {
+		return 0, &invalidDeviceIDParamError{value: strings.TrimSpace(raw)}
+	}
+	return deviceID, nil
+}
+
+func parseOptionalDeviceIDParam(raw string) (int64, bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0, false, nil
+	}
+	parsed, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, false, &invalidDeviceIDParamError{value: trimmed}
+	}
+	return parsed, true, nil
+}
+
+type invalidDeviceIDParamError struct {
+	value string
+}
+
+func (e *invalidDeviceIDParamError) Error() string {
+	return "device_id must be a positive integer: " + e.value
+}
+
+func currentUserAllowedDevicesByID(r *http.Request, deviceStore DeviceStore) (map[int64]store.Device, error) {
+	currentUser, ok := CurrentUserFromContext(r.Context())
+	if !ok {
+		return nil, errAuthRequired
+	}
+	devices, err := deviceStore.ListDevices(r.Context())
+	if err != nil {
+		return nil, errDeviceLookupFailed
+	}
+	allowed := make(map[int64]store.Device)
+	for _, d := range devices {
+		if d.UserID == currentUser.ID {
+			allowed[d.ID] = d
+		}
+	}
+	return allowed, nil
 }
 
 func applyDefaultVisitGenerationWindow(fromUTC, toUTC **time.Time) {
