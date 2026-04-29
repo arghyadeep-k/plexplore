@@ -158,7 +158,7 @@ func writeLoginPage(w http.ResponseWriter, r *http.Request, status int, email, e
 	page = strings.ReplaceAll(page, "__EMAIL_VALUE__", html.EscapeString(strings.TrimSpace(email)))
 	page = strings.ReplaceAll(page, "__NEXT_VALUE__", html.EscapeString(strings.TrimSpace(nextPath)))
 	page = strings.ReplaceAll(page, "__ERROR_BLOCK__", errorBlock)
-	setHTMLSecurityHeaders(w)
+	setHTMLSecurityHeaders(w, MapTileConfig{Mode: "none"})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, page)

@@ -86,6 +86,9 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "unsafe-inline") {
 		t.Fatalf("expected CSP without unsafe-inline, got %q", got)
 	}
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "img-src 'self' data:") {
+		t.Fatalf("expected restrictive img-src on status page, got %q", got)
+	}
 }
 
 func TestStatusPage_DoesNotMatchTypoPath(t *testing.T) {
@@ -195,6 +198,9 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "unsafe-inline") {
 		t.Fatalf("expected CSP without unsafe-inline, got %q", got)
 	}
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "img-src 'self' data:") {
+		t.Fatalf("expected restrictive img-src for default map mode none, got %q", got)
+	}
 }
 
 func TestMapPage_UsesConfiguredExternalTileProvider(t *testing.T) {
@@ -231,6 +237,52 @@ func TestMapPage_UsesConfiguredExternalTileProvider(t *testing.T) {
 	}
 	if !strings.Contains(body, `data-tile-url-template="http://tiles.local/{z}/{x}/{y}.png"`) {
 		t.Fatalf("expected custom tile template in map page, got %q", body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "img-src 'self' data: http://tiles.local") {
+		t.Fatalf("expected custom tile origin in CSP, got %q", got)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); hasImgSrcWildcardScheme(got) {
+		t.Fatalf("expected no broad http/https wildcard in CSP, got %q", got)
+	}
+}
+
+func TestMapPage_CSPIncludesOSMOriginsWhenModeOSM(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutesWithDependencies(mux, Dependencies{
+		UserStore: &fakeUserStore{
+			users: map[int64]store.User{
+				1: {ID: 1, Email: "u@example.com"},
+			},
+		},
+		SessionStore: &fakeSessionStore{
+			sessionByToken: map[string]store.Session{
+				"tok-1": {Token: "tok-1", UserID: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)},
+			},
+		},
+		MapTiles: MapTileConfig{
+			Mode:        "osm",
+			URLTemplate: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/map", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "tok-1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"https://tile.openstreetmap.org",
+		"https://a.tile.openstreetmap.org",
+		"https://b.tile.openstreetmap.org",
+		"https://c.tile.openstreetmap.org",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("expected OSM origin %q in CSP, got %q", want, csp)
+		}
 	}
 }
 

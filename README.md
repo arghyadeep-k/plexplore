@@ -761,7 +761,11 @@ Baseline browser security headers:
 CSP notes:
 - UI pages now serve CSS/JS from local static assets (`/ui/assets/app/*`), so CSP no longer uses `'unsafe-inline'`
 - `script-src` and `style-src` are both restricted to `'self'`
-- `img-src` allows `'self'`, `data:`, and `http(s)` to support optional external/custom map tile providers
+- `img-src` is tile-mode-aware and no longer uses broad `http:`/`https:` wildcards:
+- `APP_MAP_TILE_MODE=none` (or blank/local): `img-src 'self' data:`
+- `APP_MAP_TILE_MODE=osm`: `img-src 'self' data:` plus explicit OpenStreetMap tile origins
+- `APP_MAP_TILE_MODE=custom`: `img-src 'self' data:` plus only the parsed origin from `APP_MAP_TILE_URL_TEMPLATE`
+- invalid/unknown tile templates fall back to restrictive `img-src 'self' data:`
 
 Route access model:
 - public routes:

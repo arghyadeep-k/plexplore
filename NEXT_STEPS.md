@@ -1,12 +1,12 @@
 # Next Steps
 
 ## Current milestone
-Visit scheduler restart/watermark persistence is now covered by SQLite-backed integration test
+Dynamic CSP `img-src` is now tile-mode-aware and no longer allows broad scheme wildcards
 
 ## Next 3 tasks
 1. Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error time)
 2. Add store-backed integration test for scheduler telemetry + watermark summary values under mixed device update/no-op runs
-3. Add authenticated browser smoke flow for `/login` -> `/ui/status` verifying scheduler section rendering and refresh path
+3. Run manual runtime CSP validation for map tile modes (`none`, `osm`, `custom`) with live `curl -I` and browser map load checks
 
 ## Commands
 - `go test ./...`

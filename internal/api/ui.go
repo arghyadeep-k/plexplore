@@ -359,7 +359,7 @@ func registerUIRoutes(mux *http.ServeMux, deps Dependencies) {
 func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
-		setHTMLSecurityHeaders(w)
+		setHTMLSecurityHeaders(w, MapTileConfig{Mode: "none"})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(statusPageHTML, r, csrfToken))
 	}
@@ -368,7 +368,7 @@ func statusPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 func mapPageHandler(cookiePolicy CookieSecurityPolicy, mapTiles MapTileConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
-		setHTMLSecurityHeaders(w)
+		setHTMLSecurityHeaders(w, mapTiles)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderMapPage(mapPageHTML, r, csrfToken, mapTiles))
 	}
@@ -377,7 +377,7 @@ func mapPageHandler(cookiePolicy CookieSecurityPolicy, mapTiles MapTileConfig) h
 func adminUsersPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
-		setHTMLSecurityHeaders(w)
+		setHTMLSecurityHeaders(w, MapTileConfig{Mode: "none"})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(adminUsersPageHTML, r, csrfToken))
 	}
@@ -386,7 +386,7 @@ func adminUsersPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 func adminDevicesPageHandler(cookiePolicy CookieSecurityPolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		csrfToken := ensureCSRFCookie(w, r, cookiePolicy)
-		setHTMLSecurityHeaders(w)
+		setHTMLSecurityHeaders(w, MapTileConfig{Mode: "none"})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, renderUIPage(adminDevicesPageHTML, r, csrfToken))
 	}

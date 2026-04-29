@@ -3828,6 +3828,51 @@ Pending:
 Known issues:
 - In this shell environment, `go run` and `curl` commands ran in isolated execution contexts, so live `curl` status checks could not reach the server process started in a separate session.
 
+### 2026-04-28 20:18 CDT - Phase 91 (Dynamic CSP img-src by Map Tile Mode)
+Implemented:
+- Tightened HTML CSP `img-src` generation to be dynamic and tile-mode-aware instead of broad `http:`/`https:` wildcards.
+- Added dynamic CSP builder in `internal/api/security_headers.go`:
+  - always includes `'self'` and `data:`
+  - `none`/`blank`/`local`/`self-hosted` modes: no external origins
+  - `osm` mode: explicit OSM origins only (`tile.openstreetmap.org` and `a/b/c` subdomains when template uses `{s}`)
+  - `custom` mode: parses configured tile URL template and includes only extracted origin(s)
+  - unknown/misconfigured templates fall back to restrictive `'self' data:`
+- Updated HTML handlers to pass tile config into CSP generation:
+  - login/status/users/devices pages use restrictive local-only mode
+  - map page uses configured `MapTileConfig`
+- Added/updated tests:
+  - new CSP unit tests for none/osm/custom/invalid custom template behavior
+  - UI tests asserting restrictive/default CSP, custom origin inclusion, and OSM origin inclusion
+  - assertions that wildcard scheme tokens (`http:`/`https:`) are not present in `img-src`
+- Updated README security notes documenting tile-mode-driven `img-src` behavior.
+
+Architectural decisions:
+- Decision: Build `img-src` from tile mode + parsed template origin, not from raw wildcard schemes.
+  Reason: minimizes third-party request surface while preserving map tile functionality per explicit configuration.
+
+Files changed:
+- `internal/api/security_headers.go`
+- `internal/api/security_headers_test.go`
+- `internal/api/ui.go`
+- `internal/api/login.go`
+- `internal/api/ui_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/security_headers.go internal/api/security_headers_test.go internal/api/ui_test.go internal/api/ui.go internal/api/login.go`
+- `go test ./internal/api`
+- `go test ./...`
+
+Pending:
+- Manual runtime header verification in a single shared process/network context:
+  - `curl -I http://127.0.0.1:8080/`
+  - map page checks for `none`, `osm`, `custom` tile modes.
+
+Known issues:
+- In this shell environment, `go run` and `curl` may execute in isolated contexts, so manual live header checks can require a separate explicit runtime session.
+
 ### 2026-04-28 20:02 CDT - Phase 90 (Visit Scheduler Restart/Watermark SQLite Integration)
 Implemented:
 - Added SQLite-backed integration test proving visit scheduler watermark/progress survives restart and remains incremental:
