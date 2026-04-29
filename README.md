@@ -467,6 +467,12 @@ curl -sS "http://localhost:8080/api/v1/visits?device_id=1&from=2026-04-20T00:00:
 - `device_id` (stable numeric device row ID)
 - `limit` (optional, default `5000`, hard max `20000`)
 - response is streamed row-by-row to reduce RAM usage on low-memory devices
+- preflight runs before streaming starts:
+- validates params + ownership + DB stream setup
+- checks first row availability before writing `200 OK`
+- zero-row exports return a valid empty FeatureCollection
+- invalid params return `400`, invalid/non-owned device filter returns `404`, and preflight DB/setup errors return `500`
+- if a failure occurs after headers have already been sent, the server logs the failure and sets trailer `X-Export-Error`; HTTP status cannot be changed at that point
 
 Examples:
 
@@ -493,6 +499,11 @@ curl -LJO "http://localhost:8080/api/v1/exports/geojson?device_id=1"
 - `device_id` (stable numeric device row ID)
 - `limit` (optional, default `5000`, hard max `20000`)
 - response is streamed row-by-row to reduce RAM usage on low-memory devices
+- preflight behavior mirrors GeoJSON export:
+- checks params/ownership/DB stream setup before `200 OK`
+- zero-row exports return a valid empty GPX payload
+- invalid params return `400`, invalid/non-owned device filter returns `404`, and preflight DB/setup errors return `500`
+- mid-stream failures are logged and reported via trailer `X-Export-Error` when possible
 
 Examples:
 
@@ -506,6 +517,11 @@ curl -sS "http://localhost:8080/api/v1/exports/gpx?device_id=1&from=2026-04-22T0
 # download to file with server-suggested filename
 curl -LJO "http://localhost:8080/api/v1/exports/gpx?device_id=1"
 ```
+
+Export size guidance for Raspberry Pi Zero 2 W:
+- prefer bounded time windows (`from`/`to`) and device-specific filters
+- keep `limit` below the hard cap unless you explicitly need large exports
+- for very large histories, run multiple smaller exports by time range
 
 ## Shutdown And Recovery Behavior
 

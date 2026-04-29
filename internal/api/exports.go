@@ -2,9 +2,11 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -80,7 +82,7 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 				return
 			}
 			if _, allowed := allowedDevices[*filter.DeviceRowID]; !allowed {
-				writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
+				writeJSONError(w, http.StatusNotFound, "device not found")
 				return
 			}
 		}
@@ -91,6 +93,19 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 			return
 		}
 
+		firstPoint, hasRows, err := probeExportFirstPoint(r.Context(), pointStore, filter)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to prepare geojson export")
+			return
+		}
+		if !hasRows {
+			w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
+			w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.geojson"`)
+			writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
+			return
+		}
+
+		w.Header().Set("Trailer", "X-Export-Error")
 		w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.geojson"`)
 		w.WriteHeader(http.StatusOK)
@@ -99,7 +114,7 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 		_, _ = bw.WriteString(`{"type":"FeatureCollection","features":[`)
 
 		first := true
-		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+		writeFeature := func(point store.RecentPoint) error {
 			feature := geoJSONFeature{
 				Type: "Feature",
 				Geometry: geoJSONGeometry{
@@ -125,10 +140,22 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 			first = false
 			_, writeErr := bw.Write(blob)
 			return writeErr
+		}
+		if err := writeFeature(firstPoint); err != nil {
+			log.Printf("geojson export first-row write failed: %v", err)
+			w.Header().Set("X-Export-Error", "stream-write-failed")
+			return
+		}
+		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+			// first row already emitted during preflight
+			if point.Seq == firstPoint.Seq {
+				return nil
+			}
+			return writeFeature(point)
 		})
 		if err != nil {
-			http.Error(w, "failed to stream geojson export", http.StatusInternalServerError)
-			return
+			log.Printf("geojson export stream failed after headers: %v", err)
+			w.Header().Set("X-Export-Error", "stream-failed")
 		}
 		_, _ = bw.WriteString("]}")
 		_ = bw.Flush()
@@ -227,7 +254,7 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 				return
 			}
 			if _, allowed := allowedDevices[*filter.DeviceRowID]; !allowed {
-				writeEmptyGPX(w)
+				writeJSONError(w, http.StatusNotFound, "device not found")
 				return
 			}
 		}
@@ -238,6 +265,19 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 			return
 		}
 
+		firstPoint, hasRows, err := probeExportFirstPoint(r.Context(), pointStore, filter)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to prepare gpx export")
+			return
+		}
+		if !hasRows {
+			w.Header().Set("Content-Type", "application/gpx+xml; charset=utf-8")
+			w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.gpx"`)
+			writeEmptyGPX(w)
+			return
+		}
+
+		w.Header().Set("Trailer", "X-Export-Error")
 		w.Header().Set("Content-Type", "application/gpx+xml; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.gpx"`)
 		w.WriteHeader(http.StatusOK)
@@ -247,7 +287,7 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 		_, _ = bw.WriteString(`<gpx version="1.1" creator="plexplore" xmlns="http://www.topografix.com/GPX/1/1">`)
 		_, _ = bw.WriteString(`<trk><name>plexplore-export</name><trkseg>`)
 
-		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+		writeTrackPoint := func(point store.RecentPoint) error {
 			_, writeErr := fmt.Fprintf(
 				bw,
 				`<trkpt lat="%f" lon="%f"><time>%s</time></trkpt>`,
@@ -256,14 +296,43 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 				point.TimestampUTC.UTC().Format(time.RFC3339Nano),
 			)
 			return writeErr
+		}
+		if err := writeTrackPoint(firstPoint); err != nil {
+			log.Printf("gpx export first-row write failed: %v", err)
+			w.Header().Set("X-Export-Error", "stream-write-failed")
+			return
+		}
+		_, err = pointStore.StreamPointsForExport(r.Context(), filter, limit, func(point store.RecentPoint) error {
+			// first row already emitted during preflight
+			if point.Seq == firstPoint.Seq {
+				return nil
+			}
+			return writeTrackPoint(point)
 		})
 		if err != nil {
-			http.Error(w, "failed to stream gpx export", http.StatusInternalServerError)
-			return
+			log.Printf("gpx export stream failed after headers: %v", err)
+			w.Header().Set("X-Export-Error", "stream-failed")
 		}
 		_, _ = bw.WriteString(`</trkseg></trk></gpx>`)
 		_ = bw.Flush()
 	}
+}
+
+func probeExportFirstPoint(ctx context.Context, pointStore PointStore, filter store.ExportPointFilter) (store.RecentPoint, bool, error) {
+	var first store.RecentPoint
+	found := false
+	_, err := pointStore.StreamPointsForExport(ctx, filter, 1, func(point store.RecentPoint) error {
+		first = point
+		found = true
+		return nil
+	})
+	if err != nil {
+		return store.RecentPoint{}, false, err
+	}
+	if !found {
+		return store.RecentPoint{}, false, nil
+	}
+	return first, true, nil
 }
 
 func writeEmptyGPX(w http.ResponseWriter) {

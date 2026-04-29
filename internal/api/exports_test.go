@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"net/http"
@@ -47,6 +48,9 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	}
 	if !pointStore.streamCalled {
 		t.Fatalf("expected streamed export path to be used")
+	}
+	if pointStore.streamCallCount != 2 {
+		t.Fatalf("expected preflight+stream calls (2), got %d", pointStore.streamCallCount)
 	}
 	if pointStore.lastExportFilter.FromUTC == nil || pointStore.lastExportFilter.ToUTC == nil {
 		t.Fatalf("expected from/to filters set, got %+v", pointStore.lastExportFilter)
@@ -109,6 +113,23 @@ func TestGeoJSONExport_InvalidDeviceIDQuery(t *testing.T) {
 	}
 }
 
+func TestGeoJSONExport_PreflightFailureReturnsErrorBeforeHeaders(t *testing.T) {
+	pointStore := &fakePointStore{streamErr: context.DeadlineExceeded}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected json error response, got content-type=%q", rec.Header().Get("Content-Type"))
+	}
+}
+
 func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
@@ -146,6 +167,9 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	}
 	if !pointStore.streamCalled {
 		t.Fatalf("expected streamed export path to be used")
+	}
+	if pointStore.streamCallCount != 2 {
+		t.Fatalf("expected preflight+stream calls (2), got %d", pointStore.streamCallCount)
 	}
 	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.gpx") {
 		t.Fatalf("expected GPX download filename header, got %q", rec.Header().Get("Content-Disposition"))
@@ -213,6 +237,51 @@ func TestGPXExport_InvalidTimestampQuery(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGeoJSONExport_ZeroRowsIsValidFeatureCollection(t *testing.T) {
+	pointStore := &fakePointStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload geoJSONFeatureCollection
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal geojson failed: %v", err)
+	}
+	if payload.Type != "FeatureCollection" || len(payload.Features) != 0 {
+		t.Fatalf("expected empty feature collection, got %+v", payload)
+	}
+}
+
+func TestGPXExport_ZeroRowsIsValid(t *testing.T) {
+	pointStore := &fakePointStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var parsed gpxDocument
+	if err := xml.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("xml unmarshal failed: %v", err)
+	}
+	if parsed.XMLName.Local != "gpx" {
+		t.Fatalf("expected gpx root, got %+v", parsed.XMLName)
+	}
+	if len(parsed.Track.Segment.Points) != 0 {
+		t.Fatalf("expected empty gpx track segment, got %d points", len(parsed.Track.Segment.Points))
 	}
 }
 
@@ -300,14 +369,7 @@ func TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var parsed gpxDocument
-	if err := xml.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("xml unmarshal failed: %v", err)
-	}
-	if len(parsed.Track.Segment.Points) != 0 {
-		t.Fatalf("expected 0 points for cross-user filter trick, got %d", len(parsed.Track.Segment.Points))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

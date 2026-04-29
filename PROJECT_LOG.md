@@ -4629,3 +4629,55 @@ Pending:
 
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
+
+### 2026-04-29 03:05 UTC - Phase 90 (Export Preflight + Safer Failure Signaling)
+Implemented:
+- Hardened GeoJSON/GPX export handlers to avoid sending `200 OK` before stream readiness checks.
+- Added export preflight probe (`limit=1`) before writing headers:
+- validates DB stream setup/accessibility
+- determines zero-row behavior without opening a long streaming response
+- For zero rows:
+- GeoJSON now returns a valid empty FeatureCollection
+- GPX now returns a valid empty GPX payload
+- Updated cross-user/non-owned numeric `device_id` behavior for exports:
+- returns `404 device not found` before streaming instead of returning an empty success payload
+- Added mid-stream failure signaling:
+- failures are logged
+- response trailer `X-Export-Error` is populated when a stream fails after headers are sent
+- response body is still best-effort closed (`]}` / `</trkseg></trk></gpx>`) to reduce malformed output risk
+- Added/updated export tests covering:
+- preflight failure returns `500` before headers
+- invalid params return `400`
+- non-owned device filter returns `404`
+- zero-row GeoJSON/GPX validity
+- successful exports remain valid and use stream path with preflight
+
+Architectural decisions:
+- Decision: Use low-memory preflight probe + streaming (Option B-style two-pass behavior).
+  Reason: preserves Raspberry Pi-friendly streaming while reducing silent-corruption risk from early `200 OK`.
+- Decision: Report mid-stream failures with logging + trailer instead of buffering full exports in memory.
+  Reason: avoids high RAM usage and keeps failure signaling lightweight.
+
+Files changed:
+- `internal/api/exports.go`
+- `internal/api/exports_test.go`
+- `internal/api/points_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/api/exports.go internal/api/exports_test.go internal/api/points_test.go`
+- `go test ./internal/api -run 'Test(GeoJSONExport_|GPXExport_|ExportEndpoints_)' -count=1`
+- `go test ./...`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+
+Pending:
+- Add checkpoint retry pressure fields to authenticated `/api/v1/status`.
+- Add store-backed integration test for scheduler telemetry + watermark summary values.
+- Run manual runtime CSP validation for map tile modes (`none`, `osm`, `custom`).
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.

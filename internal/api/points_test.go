@@ -18,6 +18,8 @@ type fakePointStore struct {
 	lastExportFilter store.ExportPointFilter
 	lastPointsFilter store.ExportPointFilter
 	streamCalled     bool
+	streamErr        error
+	streamCallCount  int
 }
 
 func (f *fakePointStore) ListRecentPoints(_ context.Context, deviceID *int64, limit int) ([]store.RecentPoint, error) {
@@ -36,6 +38,10 @@ func (f *fakePointStore) ListPointsForExport(_ context.Context, filter store.Exp
 }
 
 func (f *fakePointStore) StreamPointsForExport(_ context.Context, filter store.ExportPointFilter, limit int, fn func(store.RecentPoint) error) (int, error) {
+	f.streamCallCount++
+	if f.streamErr != nil {
+		return 0, f.streamErr
+	}
 	f.streamCalled = true
 	f.lastExportFilter = filter
 	f.lastLimit = limit

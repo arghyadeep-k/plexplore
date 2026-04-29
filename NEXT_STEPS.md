@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Current milestone
-Stable numeric `device_id` filtering is now enforced for points, recent points, exports, and map UI requests.
+Export streaming now performs preflight checks before sending `200 OK` and reports mid-stream failures via logs + `X-Export-Error` trailer.
 
 ## Next 3 tasks
 1. Add checkpoint retry pressure fields to authenticated `/api/v1/status` (failure count and last checkpoint error time)
@@ -10,6 +10,7 @@ Stable numeric `device_id` filtering is now enforced for points, recent points, 
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'Test(GeoJSONExport_|GPXExport_|ExportEndpoints_)' -count=1`
 - `go test ./internal/api -run 'Test(PointsEndpoint_SameNameDevices_FilteredByNumericDeviceID|RecentPointsEndpoint_InvalidDeviceID|GeoJSONExport_InvalidDeviceIDQuery|UIAssets_MapScriptContainsEscapedPopupFields)' -count=1`
 - `go test ./internal/store -run 'TestSQLiteStore_(ListRecentPoints|ListPointsForExport_WithFilters|ListPoints_WithFiltersAndAscendingOrder|StreamPointsForExport_WithLimit)' -count=1`
 - `go test ./internal/tasks -run TestVisitScheduler -count=1`
