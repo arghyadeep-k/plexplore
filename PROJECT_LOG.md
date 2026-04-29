@@ -3827,6 +3827,40 @@ Pending:
 
 Known issues:
 - In this shell environment, `go run` and `curl` commands ran in isolated execution contexts, so live `curl` status checks could not reach the server process started in a separate session.
+
+### 2026-04-28 20:02 CDT - Phase 90 (Visit Scheduler Restart/Watermark SQLite Integration)
+Implemented:
+- Added SQLite-backed integration test proving visit scheduler watermark/progress survives restart and remains incremental:
+  - creates temp SQLite DB and applies real migrations
+  - creates two users with same device name (`phone`) to verify stable device/user isolation
+  - inserts deterministic persisted points via real store path
+  - runs scheduler once and verifies visits + watermark persistence
+  - recreates runtime/scheduler (restart simulation), reruns without new points, verifies no duplicate visits
+  - inserts new points after watermark, reruns, verifies only new visit is added and watermark advances
+- The restart scenario confirms persisted `visit_generation_state` is reused correctly across process restart.
+
+Architectural decisions:
+- Decision: Integration test uses real SQLite store + real migrations + real `VisitScheduler.RunOnce` and avoids timer-based scheduling.
+  Reason: deterministic, low-overhead, and closest to production behavior without background timing flakiness.
+
+Files changed:
+- `internal/tasks/visit_scheduler_restart_integration_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/visit_scheduler_restart_integration_test.go`
+- `go test ./internal/tasks -run TestVisit -count=1`
+- `go test ./internal/tasks -run TestScheduler -count=1`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+
+Pending:
+- Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error timestamp).
+- Add authenticated browser smoke flow for `/login` -> `/ui/status` and scheduler section refresh.
+
+Known issues:
+- `go test ./internal/tasks -run TestScheduler -count=1` currently reports `[no tests to run]` because scheduler tests are named `TestVisitScheduler*`; command kept for compatibility with existing task checklist.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
 ### 2026-04-24 15:48 UTC - Phase 81 (Production-Hardening Follow-up Verification)

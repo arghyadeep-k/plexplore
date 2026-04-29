@@ -1,11 +1,11 @@
 # Next Steps
 
 ## Current milestone
-Visit scheduler telemetry is now exposed in authenticated operational status API/UI (run state + counters + watermark summary)
+Visit scheduler restart/watermark persistence is now covered by SQLite-backed integration test
 
 ## Next 3 tasks
 1. Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error time)
-2. Add store-backed integration test for scheduler telemetry + watermark summary against SQLite
+2. Add store-backed integration test for scheduler telemetry + watermark summary values under mixed device update/no-op runs
 3. Add authenticated browser smoke flow for `/login` -> `/ui/status` verifying scheduler section rendering and refresh path
 
 ## Commands
