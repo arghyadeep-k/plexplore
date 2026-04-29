@@ -23,6 +23,34 @@ type operationalStatusResponse struct {
 	LastFlushError           string                   `json:"last_flush_error,omitempty"`
 	SQLiteDBPath             string                   `json:"sqlite_db_path,omitempty"`
 	LastFlush                *lastFlushStatusResponse `json:"last_flush,omitempty"`
+	VisitScheduler           *visitSchedulerStatus    `json:"visit_scheduler,omitempty"`
+}
+
+type visitSchedulerStatus struct {
+	Enabled          bool                      `json:"enabled"`
+	Running          bool                      `json:"running"`
+	LastRunStartAt   string                    `json:"last_run_start_at_utc,omitempty"`
+	LastRunFinishAt  string                    `json:"last_run_finish_at_utc,omitempty"`
+	LastSuccessAt    string                    `json:"last_success_at_utc,omitempty"`
+	LastError        string                    `json:"last_error,omitempty"`
+	LastRun          visitSchedulerRunCounters `json:"last_run"`
+	WatermarkSummary visitSchedulerWatermark   `json:"watermark_summary"`
+}
+
+type visitSchedulerRunCounters struct {
+	ProcessedDevices int `json:"processed_devices"`
+	SkippedDevices   int `json:"skipped_devices"`
+	UpdatedDevices   int `json:"updated_devices"`
+	CreatedVisits    int `json:"created_visits"`
+	Errors           int `json:"errors"`
+}
+
+type visitSchedulerWatermark struct {
+	DevicesWithWatermark int    `json:"devices_with_watermark"`
+	MinSeq               uint64 `json:"min_seq"`
+	MaxSeq               uint64 `json:"max_seq"`
+	LastProcessedAtUTC   string `json:"last_processed_at_utc,omitempty"`
+	LagSeconds           int64  `json:"lag_seconds"`
 }
 
 type publicStatusResponse struct {
@@ -85,6 +113,40 @@ func statusHandler(deps Dependencies) http.HandlerFunc {
 					resp.LastFlushError = last.Error
 				}
 			}
+		}
+		if deps.VisitScheduler != nil {
+			s := deps.VisitScheduler.Status()
+			vs := &visitSchedulerStatus{
+				Enabled:   s.Enabled,
+				Running:   s.Running,
+				LastError: s.LastError,
+				LastRun: visitSchedulerRunCounters{
+					ProcessedDevices: s.LastRunProcessed,
+					SkippedDevices:   s.LastRunSkipped,
+					UpdatedDevices:   s.LastRunUpdated,
+					CreatedVisits:    s.LastRunCreated,
+					Errors:           s.LastRunErrors,
+				},
+				WatermarkSummary: visitSchedulerWatermark{
+					DevicesWithWatermark: s.WatermarkDevices,
+					MinSeq:               s.WatermarkMinSeq,
+					MaxSeq:               s.WatermarkMaxSeq,
+					LagSeconds:           s.LagSeconds,
+				},
+			}
+			if !s.LastRunStartUTC.IsZero() {
+				vs.LastRunStartAt = s.LastRunStartUTC.Format("2006-01-02T15:04:05.000000000Z07:00")
+			}
+			if !s.LastRunFinishUTC.IsZero() {
+				vs.LastRunFinishAt = s.LastRunFinishUTC.Format("2006-01-02T15:04:05.000000000Z07:00")
+			}
+			if !s.LastSuccessUTC.IsZero() {
+				vs.LastSuccessAt = s.LastSuccessUTC.Format("2006-01-02T15:04:05.000000000Z07:00")
+			}
+			if !s.WatermarkLastUTC.IsZero() {
+				vs.WatermarkSummary.LastProcessedAtUTC = s.WatermarkLastUTC.Format("2006-01-02T15:04:05.000000000Z07:00")
+			}
+			resp.VisitScheduler = vs
 		}
 
 		writeJSON(w, http.StatusOK, resp)

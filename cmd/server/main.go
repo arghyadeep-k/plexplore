@@ -75,6 +75,7 @@ func main() {
 			MaxRadiusMeters: cfg.VisitSchedulerMaxRadiusMeters,
 		},
 	})
+	visitSchedulerStatus := visitSchedulerStatusAdapter{scheduler: visitScheduler}
 
 	recoveryResult, err := tasks.RecoverFromSpool(
 		spoolManager,
@@ -137,9 +138,10 @@ func main() {
 			URLTemplate: cfg.MapTileURLTemplate,
 			Attribution: cfg.MapTileAttribution,
 		},
-		RateLimiters: rateLimiters,
-		SpoolDir:     cfg.SpoolDir,
-		SQLitePath:   cfg.SQLitePath,
+		RateLimiters:   rateLimiters,
+		SpoolDir:       cfg.SpoolDir,
+		SQLitePath:     cfg.SQLitePath,
+		VisitScheduler: visitSchedulerStatus,
 		IsDraining: func() bool {
 			return draining.Load()
 		},
@@ -181,6 +183,35 @@ func main() {
 	defer cancelFlush()
 	if err := batchFlusher.Stop(flushCtx); err != nil {
 		log.Printf("flusher stop failed: %v", err)
+	}
+}
+
+type visitSchedulerStatusAdapter struct {
+	scheduler *tasks.VisitScheduler
+}
+
+func (a visitSchedulerStatusAdapter) Status() api.VisitSchedulerStatusSnapshot {
+	if a.scheduler == nil {
+		return api.VisitSchedulerStatusSnapshot{}
+	}
+	s := a.scheduler.Status()
+	return api.VisitSchedulerStatusSnapshot{
+		Enabled:          s.Enabled,
+		Running:          s.Running,
+		LastRunStartUTC:  s.LastRunStartUTC,
+		LastRunFinishUTC: s.LastRunFinishUTC,
+		LastSuccessUTC:   s.LastSuccessUTC,
+		LastError:        s.LastError,
+		LastRunProcessed: s.LastRun.ProcessedDevices,
+		LastRunSkipped:   s.LastRun.SkippedDevices,
+		LastRunUpdated:   s.LastRun.UpdatedDevices,
+		LastRunCreated:   s.LastRun.CreatedVisits,
+		LastRunErrors:    s.LastRun.Errors,
+		WatermarkDevices: s.WatermarkDevices,
+		WatermarkMinSeq:  s.WatermarkMinSeq,
+		WatermarkMaxSeq:  s.WatermarkMaxSeq,
+		WatermarkLastUTC: s.WatermarkLastUTC,
+		LagSeconds:       s.LagSeconds,
 	}
 }
 

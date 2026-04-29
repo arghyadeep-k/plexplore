@@ -59,6 +59,9 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 	if !strings.Contains(body, "Recent Points") {
 		t.Fatalf("expected recent points section in body, got %q", body)
 	}
+	if !strings.Contains(body, `id="scheduler_state"`) || !strings.Contains(body, `id="scheduler_meta"`) {
+		t.Fatalf("expected scheduler status section in status page, got %q", body)
+	}
 	if !strings.Contains(body, `id="theme_toggle"`) {
 		t.Fatalf("expected theme toggle in status page, got %q", body)
 	}

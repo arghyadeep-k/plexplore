@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ type fakeVisitSchedulerStore struct {
 	mu sync.Mutex
 
 	devices []store.Device
+	listErr error
 
 	maxSeqByDevice   map[int64]uint64
 	tsByDeviceSeq    map[int64]map[uint64]time.Time
@@ -43,6 +45,9 @@ func newFakeVisitSchedulerStore() *fakeVisitSchedulerStore {
 func (f *fakeVisitSchedulerStore) ListDevices(_ context.Context) ([]store.Device, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	out := make([]store.Device, len(f.devices))
 	copy(out, f.devices)
 	return out, nil
@@ -310,5 +315,58 @@ func TestVisitScheduler_DuplicateDeviceNamesAcrossUsersRemainIsolated(t *testing
 	}
 	if stateA.LastProcessedSeq != 5 || stateB.LastProcessedSeq != 7 {
 		t.Fatalf("unexpected per-device watermark states: A=%+v B=%+v", stateA, stateB)
+	}
+}
+
+func TestVisitSchedulerStatus_DefaultAndSuccess(t *testing.T) {
+	st := newFakeVisitSchedulerStore()
+	s := NewVisitScheduler(st, VisitSchedulerConfig{Enabled: false})
+	initial := s.Status()
+	if initial.Enabled {
+		t.Fatalf("expected disabled scheduler status by default")
+	}
+	if initial.Running {
+		t.Fatalf("expected initial running=false")
+	}
+
+	st.devices = []store.Device{{ID: 1, Name: "d1"}}
+	st.maxSeqByDevice[1] = 3
+	st.createdByDevice[1] = 2
+	s = NewVisitScheduler(st, VisitSchedulerConfig{Enabled: true, Interval: time.Minute})
+	if _, err := s.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce failed: %v", err)
+	}
+	status := s.Status()
+	if !status.Enabled {
+		t.Fatalf("expected enabled scheduler status")
+	}
+	if status.Running {
+		t.Fatalf("expected running=false after run")
+	}
+	if status.LastRun.ProcessedDevices != 1 || status.LastRun.UpdatedDevices != 1 || status.LastRun.CreatedVisits != 2 {
+		t.Fatalf("unexpected run counters: %+v", status.LastRun)
+	}
+	if status.LastSuccessUTC.IsZero() {
+		t.Fatalf("expected LastSuccessUTC to be set")
+	}
+	if status.LastError != "" {
+		t.Fatalf("expected empty last error, got %q", status.LastError)
+	}
+}
+
+func TestVisitSchedulerStatus_RecordsError(t *testing.T) {
+	st := newFakeVisitSchedulerStore()
+	st.listErr = errors.New("list failed")
+	s := NewVisitScheduler(st, VisitSchedulerConfig{Enabled: true, Interval: time.Minute})
+
+	if _, err := s.RunOnce(context.Background()); err == nil {
+		t.Fatalf("expected RunOnce error")
+	}
+	status := s.Status()
+	if status.LastError == "" {
+		t.Fatalf("expected LastError to be set")
+	}
+	if status.LastRun.ProcessedDevices != 0 {
+		t.Fatalf("expected zero processed devices on top-level failure, got %+v", status.LastRun)
 	}
 }

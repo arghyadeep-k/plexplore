@@ -67,6 +67,11 @@ const statusPageHTML = `<!doctype html>
         <div id="flush_status" class="value">-</div>
         <div id="flush_meta" class="tiny"></div>
       </div>
+      <div class="card">
+        <div class="label">Visit Scheduler</div>
+        <div id="scheduler_state" class="value">-</div>
+        <div id="scheduler_meta" class="tiny"></div>
+      </div>
     </div>
 
     <div class="card mt-12">

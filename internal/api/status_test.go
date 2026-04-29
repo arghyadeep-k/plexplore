@@ -48,6 +48,14 @@ type fakeStatusFlusher struct {
 	has    bool
 }
 
+type fakeStatusVisitScheduler struct {
+	status VisitSchedulerStatusSnapshot
+}
+
+func (f *fakeStatusVisitScheduler) Status() VisitSchedulerStatusSnapshot {
+	return f.status
+}
+
 func (f *fakeStatusFlusher) TriggerFlush() {}
 
 func (f *fakeStatusFlusher) LastFlushResult() (flusher.LastFlushResult, bool) {
@@ -77,6 +85,22 @@ func TestStatusEndpoint_ReturnsOperationalState(t *testing.T) {
 				AtUTC:            lastAttemptAt,
 				LastSuccessAtUTC: lastSuccessAt,
 				Success:          true,
+			},
+		},
+		VisitScheduler: &fakeStatusVisitScheduler{
+			status: VisitSchedulerStatusSnapshot{
+				Enabled:          true,
+				Running:          false,
+				LastRunStartUTC:  time.Date(2026, 4, 21, 22, 0, 0, 0, time.UTC),
+				LastRunFinishUTC: time.Date(2026, 4, 21, 22, 0, 2, 0, time.UTC),
+				LastSuccessUTC:   time.Date(2026, 4, 21, 22, 0, 2, 0, time.UTC),
+				LastRunProcessed: 2,
+				LastRunUpdated:   1,
+				LastRunCreated:   3,
+				WatermarkDevices: 2,
+				WatermarkMinSeq:  10,
+				WatermarkMaxSeq:  20,
+				LagSeconds:       12,
 			},
 		},
 		SpoolDir:   "/tmp/plexplore-spool",
@@ -119,6 +143,12 @@ func TestStatusEndpoint_ReturnsOperationalState(t *testing.T) {
 	}
 	if resp.LastFlushAttemptAtUTC == "" || resp.LastFlushSuccessAtUTC == "" {
 		t.Fatalf("expected flush timing fields, got %+v", resp)
+	}
+	if resp.VisitScheduler == nil || !resp.VisitScheduler.Enabled {
+		t.Fatalf("expected visit scheduler status in response, got %+v", resp.VisitScheduler)
+	}
+	if resp.VisitScheduler.LastRun.ProcessedDevices != 2 || resp.VisitScheduler.WatermarkSummary.DevicesWithWatermark != 2 {
+		t.Fatalf("unexpected visit scheduler payload: %+v", resp.VisitScheduler)
 	}
 }
 
@@ -235,6 +265,9 @@ func TestStatusEndpoint_PublicAliasRouteIsSafe(t *testing.T) {
 	}
 	if _, ok := resp["checkpoint_seq"]; ok {
 		t.Fatalf("did not expect sensitive field checkpoint_seq in /status: %+v", resp)
+	}
+	if _, ok := resp["visit_scheduler"]; ok {
+		t.Fatalf("did not expect visit_scheduler in public /status: %+v", resp)
 	}
 	if got := resp["service_health"]; got != "ok" {
 		t.Fatalf("expected service_health=ok, got %+v", got)

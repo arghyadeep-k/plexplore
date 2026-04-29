@@ -1,12 +1,12 @@
 # Next Steps
 
 ## Current milestone
-Flusher checkpoint-failure retry safety complete (requeue-on-checkpoint-failure with deterministic retry tests)
+Visit scheduler telemetry is now exposed in authenticated operational status API/UI (run state + counters + watermark summary)
 
 ## Next 3 tasks
-1. Add authenticated status visibility for checkpoint retry pressure and visit scheduler state under `/api/v1/status`
-2. Align points/recent/export filters to optional stable numeric device IDs (preserve compatibility where needed)
-3. Add authenticated browser smoke test for `/login` -> `/ui/admin/devices` and validate create/rotate/generate CSRF flow with numeric visit device IDs
+1. Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error time)
+2. Add store-backed integration test for scheduler telemetry + watermark summary against SQLite
+3. Add authenticated browser smoke flow for `/login` -> `/ui/status` verifying scheduler section rendering and refresh path
 
 ## Commands
 - `go test ./...`

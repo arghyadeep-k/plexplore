@@ -13,6 +13,29 @@ import (
 	"plexplore/internal/visits"
 )
 
+type VisitSchedulerStatusProvider interface {
+	Status() VisitSchedulerStatusSnapshot
+}
+
+type VisitSchedulerStatusSnapshot struct {
+	Enabled          bool
+	Running          bool
+	LastRunStartUTC  time.Time
+	LastRunFinishUTC time.Time
+	LastSuccessUTC   time.Time
+	LastError        string
+	LastRunProcessed int
+	LastRunSkipped   int
+	LastRunUpdated   int
+	LastRunCreated   int
+	LastRunErrors    int
+	WatermarkDevices int
+	WatermarkMinSeq  uint64
+	WatermarkMaxSeq  uint64
+	WatermarkLastUTC time.Time
+	LagSeconds       int64
+}
+
 type healthResponse struct {
 	Status  string `json:"status"`
 	Service string `json:"service"`
@@ -92,6 +115,7 @@ type Dependencies struct {
 	SpoolDir           string
 	SQLitePath         string
 	IsDraining         func() bool
+	VisitScheduler     VisitSchedulerStatusProvider
 }
 
 type MapTileConfig struct {

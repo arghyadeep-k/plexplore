@@ -3770,6 +3770,63 @@ Pending:
 
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
+
+### 2026-04-28 19:45 CDT - Phase 89 (Visit Scheduler Telemetry in Status API/UI)
+Implemented:
+- Added lightweight visit scheduler telemetry snapshot support in runtime scheduler:
+- enabled/running state
+- last run start/finish timestamps
+- last successful run timestamp
+- last error message
+- last run counters (processed/skipped/updated/created/errors)
+- compact watermark summary (devices with watermark, min/max seq, last processed timestamp, lag seconds)
+- Extended authenticated `GET /api/v1/status` response with `visit_scheduler` payload.
+- Kept public `GET /status` minimal and unchanged (no scheduler internals).
+- Added status UI scheduler card (`Visit Scheduler`) to `/` and `/ui/status` pages.
+- Updated status UI polling JS to render scheduler state/metadata with graceful fallback when unavailable.
+- Added tests for:
+- scheduler status default/success/error behavior
+- `/api/v1/status` scheduler telemetry presence
+- public `/status` excludes scheduler telemetry
+- status page renders scheduler section
+- Updated README Operational Status section with example `visit_scheduler` response fields.
+
+Architectural decisions:
+- Decision: Keep scheduler telemetry in an in-memory snapshot updated by scheduler runs, then expose via authenticated status endpoint.
+  Reason: avoids expensive per-request queries and keeps overhead low for Raspberry Pi-class deployments.
+- Decision: Use a small adapter in `cmd/server` to map `tasks.VisitSchedulerStatus` to API snapshot type.
+  Reason: prevents `api` <-> `tasks` import cycle while keeping interfaces explicit.
+
+Files changed:
+- `internal/tasks/visit_scheduler.go`
+- `internal/tasks/visit_scheduler_test.go`
+- `internal/api/health.go`
+- `internal/api/status.go`
+- `internal/api/status_test.go`
+- `internal/api/ui.go`
+- `internal/api/ui_test.go`
+- `internal/api/assets/app/status.js`
+- `cmd/server/main.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/visit_scheduler.go internal/tasks/visit_scheduler_test.go internal/api/health.go internal/api/status.go internal/api/status_test.go internal/api/ui.go internal/api/ui_test.go cmd/server/main.go`
+- `go test ./internal/tasks -run TestVisit -count=1`
+- `go test ./internal/api -run 'TestStatusEndpoint|TestStatusPageServedAtRoot' -count=1`
+- `go test ./...`
+- `go run ./cmd/server` (startup verified in local session)
+- `curl -sS http://127.0.0.1:8080/status` (not reachable from separate command sandbox in this environment)
+- `curl -sS http://127.0.0.1:8080/api/v1/status` (not reachable from separate command sandbox in this environment)
+
+Pending:
+- Add checkpoint-retry pressure fields (checkpoint failure count/last failure timestamp) to authenticated status payload.
+- Add SQLite-backed integration test for scheduler telemetry and watermark summary values.
+- Add authenticated browser smoke test for status scheduler card refresh behavior.
+
+Known issues:
+- In this shell environment, `go run` and `curl` commands ran in isolated execution contexts, so live `curl` status checks could not reach the server process started in a separate session.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
 
 ### 2026-04-24 15:48 UTC - Phase 81 (Production-Hardening Follow-up Verification)

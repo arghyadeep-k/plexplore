@@ -42,6 +42,7 @@ type VisitScheduler struct {
 
 	mu              sync.Mutex
 	roundRobinStart int
+	status          VisitSchedulerStatus
 }
 
 type VisitSchedulerRunResult struct {
@@ -50,6 +51,21 @@ type VisitSchedulerRunResult struct {
 	UpdatedDevices   int
 	CreatedVisits    int
 	Errors           int
+}
+
+type VisitSchedulerStatus struct {
+	Enabled          bool
+	Running          bool
+	LastRunStartUTC  time.Time
+	LastRunFinishUTC time.Time
+	LastSuccessUTC   time.Time
+	LastError        string
+	LastRun          VisitSchedulerRunResult
+	WatermarkDevices int
+	WatermarkMinSeq  uint64
+	WatermarkMaxSeq  uint64
+	WatermarkLastUTC time.Time
+	LagSeconds       int64
 }
 
 func NewVisitScheduler(store VisitSchedulerStore, cfg VisitSchedulerConfig) *VisitScheduler {
@@ -71,7 +87,22 @@ func NewVisitScheduler(store VisitSchedulerStore, cfg VisitSchedulerConfig) *Vis
 	return &VisitScheduler{
 		store: store,
 		cfg:   cfg,
+		status: VisitSchedulerStatus{
+			Enabled: cfg.Enabled,
+		},
 	}
+}
+
+func (s *VisitScheduler) Status() VisitSchedulerStatus {
+	if s == nil {
+		return VisitSchedulerStatus{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.status
+	out.Running = s.running.Load()
+	out.Enabled = s.cfg.Enabled
+	return out
 }
 
 func (s *VisitScheduler) Start(parent context.Context) {
@@ -146,15 +177,20 @@ func (s *VisitScheduler) runOnce(ctx context.Context) (VisitSchedulerRunResult, 
 	if !s.running.CompareAndSwap(false, true) {
 		return VisitSchedulerRunResult{}, nil
 	}
+	startedAt := time.Now().UTC()
+	s.setRunStart(startedAt)
 	defer s.running.Store(false)
 
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
+		s.setRunFinish(time.Now().UTC(), VisitSchedulerRunResult{}, err)
 		return VisitSchedulerRunResult{}, err
 	}
 	deviceBatch := s.selectDeviceBatch(sortedUniqueDevicesByID(devices))
 	if len(deviceBatch) == 0 {
-		return VisitSchedulerRunResult{}, nil
+		result := VisitSchedulerRunResult{}
+		s.setRunFinish(time.Now().UTC(), result, nil)
+		return result, nil
 	}
 
 	var result VisitSchedulerRunResult
@@ -175,7 +211,78 @@ func (s *VisitScheduler) runOnce(ctx context.Context) (VisitSchedulerRunResult, 
 		}
 		result.CreatedVisits += created
 	}
+	s.setRunFinish(time.Now().UTC(), result, nil)
+	s.updateWatermarkStatus(ctx, deviceBatch)
 	return result, nil
+}
+
+func (s *VisitScheduler) setRunStart(at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status.Enabled = s.cfg.Enabled
+	s.status.LastRunStartUTC = at
+	s.status.Running = true
+}
+
+func (s *VisitScheduler) setRunFinish(at time.Time, result VisitSchedulerRunResult, runErr error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status.Enabled = s.cfg.Enabled
+	s.status.Running = false
+	s.status.LastRunFinishUTC = at
+	s.status.LastRun = result
+	if runErr != nil {
+		s.status.LastError = runErr.Error()
+		return
+	}
+	s.status.LastSuccessUTC = at
+	s.status.LastError = ""
+}
+
+func (s *VisitScheduler) updateWatermarkStatus(ctx context.Context, devices []store.Device) {
+	var (
+		watermarkDevices int
+		minSeq           uint64
+		maxSeq           uint64
+		maxTimestamp     time.Time
+	)
+	for _, d := range devices {
+		state, ok, err := s.store.GetVisitGenerationState(ctx, d.ID)
+		if err != nil || !ok || state.LastProcessedSeq == 0 {
+			continue
+		}
+		watermarkDevices++
+		if minSeq == 0 || state.LastProcessedSeq < minSeq {
+			minSeq = state.LastProcessedSeq
+		}
+		if state.LastProcessedSeq > maxSeq {
+			maxSeq = state.LastProcessedSeq
+		}
+		ts, found, tsErr := s.store.GetPointTimestampForDeviceSeq(ctx, d.ID, state.LastProcessedSeq)
+		if tsErr != nil || !found {
+			continue
+		}
+		if ts.After(maxTimestamp) {
+			maxTimestamp = ts
+		}
+	}
+
+	nowUTC := time.Now().UTC()
+	var lagSeconds int64
+	if !maxTimestamp.IsZero() {
+		lagSeconds = int64(nowUTC.Sub(maxTimestamp).Seconds())
+		if lagSeconds < 0 {
+			lagSeconds = 0
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status.WatermarkDevices = watermarkDevices
+	s.status.WatermarkMinSeq = minSeq
+	s.status.WatermarkMaxSeq = maxSeq
+	s.status.WatermarkLastUTC = maxTimestamp
+	s.status.LagSeconds = lagSeconds
 }
 
 func (s *VisitScheduler) processDevice(ctx context.Context, device store.Device) (created int, updated bool, skipped bool, err error) {

@@ -299,6 +299,27 @@ Example response:
   "last_flush": {
     "at_utc": "2026-04-22T17:35:10.148337224Z",
     "success": true
+  },
+  "visit_scheduler": {
+    "enabled": true,
+    "running": false,
+    "last_run_start_at_utc": "2026-04-28T19:00:00Z",
+    "last_run_finish_at_utc": "2026-04-28T19:00:01Z",
+    "last_success_at_utc": "2026-04-28T19:00:01Z",
+    "last_run": {
+      "processed_devices": 2,
+      "skipped_devices": 1,
+      "updated_devices": 1,
+      "created_visits": 3,
+      "errors": 0
+    },
+    "watermark_summary": {
+      "devices_with_watermark": 2,
+      "min_seq": 10,
+      "max_seq": 42,
+      "last_processed_at_utc": "2026-04-28T18:59:50Z",
+      "lag_seconds": 11
+    }
   }
 }
 ```
@@ -306,6 +327,7 @@ Example response:
 Included fields (when available):
 - Public `/status`: service health and service name only.
 - Authenticated `/api/v1/status`: buffer points/bytes, oldest buffered age, spool/checkpoint state, flush timing/error, and configured spool/sqlite paths.
+- Authenticated `/api/v1/status` also includes `visit_scheduler` telemetry: enabled/running state, last run timestamps, last error, last run counters, and compact watermark lag summary.
 
 ## Recent Points (Debug)
 

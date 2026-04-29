@@ -132,6 +132,27 @@
           setText("flush_meta", "");
         }
 
+        if (status.visit_scheduler) {
+          const sched = status.visit_scheduler;
+          const state = (sched.enabled ? "Enabled" : "Disabled") + " / " + (sched.running ? "Running" : "Idle");
+          setText("scheduler_state", state, sched.enabled ? "ok" : "warn");
+          const schedulerMeta = [];
+          if (sched.last_success_at_utc) {
+            schedulerMeta.push("last success: " + sched.last_success_at_utc);
+          }
+          if (sched.watermark_summary) {
+            schedulerMeta.push("watermarks: " + String(sched.watermark_summary.devices_with_watermark || 0));
+            schedulerMeta.push("lag: " + String(sched.watermark_summary.lag_seconds || 0) + "s");
+          }
+          if (sched.last_error) {
+            schedulerMeta.push("error: " + sched.last_error);
+          }
+          setText("scheduler_meta", schedulerMeta.join(" | "));
+        } else {
+          setText("scheduler_state", "Unavailable", "warn");
+          setText("scheduler_meta", "");
+        }
+
         let deviceWarning = "";
         let pointsWarning = "";
 
