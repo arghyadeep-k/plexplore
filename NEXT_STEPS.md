@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Current milestone
-Dynamic CSP `img-src` is now tile-mode-aware and no longer allows broad scheme wildcards
+Authenticated browser admin smoke workflow is now covered end-to-end (login/session/CSRF/device rotate/visit generate)
 
 ## Next 3 tasks
 1. Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error time)

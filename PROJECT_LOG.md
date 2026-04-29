@@ -3873,6 +3873,56 @@ Pending:
 Known issues:
 - In this shell environment, `go run` and `curl` may execute in isolated contexts, so manual live header checks can require a separate explicit runtime session.
 
+### 2026-04-28 20:42 CDT - Phase 92 (Authenticated Browser Admin Workflow Smoke Test)
+Implemented:
+- Added end-to-end authenticated browser/admin smoke coverage in `internal/tasks/multi_user_auth_integration_test.go`:
+  - `TestBrowserAdminWorkflowSmoke`
+- Workflow covered:
+  1. unauthenticated access to `/ui/admin/devices` is denied (redirect)
+  2. login page + CSRF cookie/token + admin login
+  3. authenticated access to admin devices UI
+  4. device create CSRF enforcement:
+     - missing CSRF -> `403`
+     - valid CSRF -> `201`
+  5. key rotation CSRF enforcement:
+     - missing CSRF -> `403`
+     - valid CSRF -> `200` + one-time new `api_key`
+  6. rotated key behavior:
+     - old key rejected for ingest (`401`)
+     - new key accepted for ingest (`200`)
+  7. device list/read responses do not expose plaintext API keys
+  8. visit generation CSRF enforcement:
+     - missing CSRF -> `403`
+     - valid CSRF -> `200`
+  9. visit generation persistence asserted via `/api/v1/visits` and direct SQLite row check
+- Updated auth integration route wiring to include `VisitStore` so real `/api/v1/visits` and `/api/v1/visits/generate` handlers are exercised in this harness.
+
+Architectural decisions:
+- Decision: Keep smoke test in `internal/tasks` integration suite using existing real handler + temp SQLite harness.
+  Reason: lightweight, deterministic, no browser automation dependency, and full session/CSRF route coverage.
+- Decision: For visit-generation assertion, treat `created` response counter as non-authoritative for smoke semantics and assert persisted/listed visits directly.
+  Reason: idempotent rebuild paths can return `created=0` while still preserving correct persisted visit state.
+
+Files changed:
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/multi_user_auth_integration_test.go`
+- `go test ./internal/tasks -run TestBrowserAdminWorkflowSmoke -count=1`
+- `go test ./internal/tasks -run TestVisit -count=1`
+- `go test ./...`
+- `go test ./internal/api -run TestBrowserAdminWorkflowSmoke -count=1`
+
+Pending:
+- Add checkpoint retry pressure fields to `/api/v1/status`.
+- Add store-backed scheduler telemetry integration assertions (mixed update/no-op runs).
+- Run manual runtime CSP header verification for map tile modes (`none`, `osm`, `custom`).
+
+Known issues:
+- `go test ./internal/api -run TestBrowserAdminWorkflowSmoke -count=1` reports `[no tests to run]` because the smoke test lives in `internal/tasks` by design.
+
 ### 2026-04-28 20:02 CDT - Phase 90 (Visit Scheduler Restart/Watermark SQLite Integration)
 Implemented:
 - Added SQLite-backed integration test proving visit scheduler watermark/progress survives restart and remains incremental:
