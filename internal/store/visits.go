@@ -103,9 +103,8 @@ VALUES (?, ?, ?, ?, ?, ?);
 
 func (s *SQLiteStore) listPointsForVisitDetectionByDeviceID(ctx context.Context, deviceID int64, fromUTC, toUTC *time.Time) ([]RecentPoint, error) {
 	baseSQL := `
-SELECT rp.seq, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.device_id, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
-JOIN devices d ON d.id = rp.device_id
 `
 	whereParts := []string{"rp.device_id = ?"}
 	args := []any{deviceID}

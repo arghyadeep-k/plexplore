@@ -12,7 +12,7 @@ import (
 )
 
 type fakePointStore struct {
-	lastDeviceID     string
+	lastDeviceID     *int64
 	lastLimit        int
 	points           []store.RecentPoint
 	lastExportFilter store.ExportPointFilter
@@ -20,7 +20,7 @@ type fakePointStore struct {
 	streamCalled     bool
 }
 
-func (f *fakePointStore) ListRecentPoints(_ context.Context, deviceID string, limit int) ([]store.RecentPoint, error) {
+func (f *fakePointStore) ListRecentPoints(_ context.Context, deviceID *int64, limit int) ([]store.RecentPoint, error) {
 	f.lastDeviceID = deviceID
 	f.lastLimit = limit
 	out := make([]store.RecentPoint, len(f.points))
@@ -44,7 +44,7 @@ func (f *fakePointStore) StreamPointsForExport(_ context.Context, filter store.E
 		if filter.UserID > 0 && p.UserID != filter.UserID {
 			continue
 		}
-		if filter.DeviceID != "" && p.DeviceID != filter.DeviceID {
+		if filter.DeviceRowID != nil && p.DeviceID != *filter.DeviceRowID {
 			continue
 		}
 		if filter.FromUTC != nil && p.TimestampUTC.Before(*filter.FromUTC) {
@@ -75,7 +75,7 @@ func (f *fakePointStore) ListPoints(_ context.Context, filter store.ExportPointF
 		if filter.UserID > 0 && p.UserID != filter.UserID {
 			continue
 		}
-		if filter.DeviceID != "" && p.DeviceID != filter.DeviceID {
+		if filter.DeviceRowID != nil && p.DeviceID != *filter.DeviceRowID {
 			continue
 		}
 		if filter.FromUTC != nil && p.TimestampUTC.Before(*filter.FromUTC) {
@@ -100,7 +100,7 @@ func TestPointsEndpoint_DefaultQuery(t *testing.T) {
 		points: []store.RecentPoint{
 			{
 				Seq:          1,
-				DeviceID:     "phone-main",
+				DeviceID:     1,
 				SourceType:   "owntracks",
 				TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC),
 				Lat:          41.1,
@@ -121,7 +121,7 @@ func TestPointsEndpoint_DefaultQuery(t *testing.T) {
 	if pointStore.lastLimit != defaultPointsLimit+1 {
 		t.Fatalf("expected query limit 501 (default+1 for pagination check), got %d", pointStore.lastLimit)
 	}
-	if pointStore.lastPointsFilter.DeviceID != "" || pointStore.lastPointsFilter.FromUTC != nil || pointStore.lastPointsFilter.ToUTC != nil {
+	if pointStore.lastPointsFilter.DeviceRowID != nil || pointStore.lastPointsFilter.FromUTC != nil || pointStore.lastPointsFilter.ToUTC != nil {
 		t.Fatalf("expected empty default filter, got %+v", pointStore.lastPointsFilter)
 	}
 }
@@ -148,15 +148,15 @@ func TestPointsEndpoint_DeviceFiltering(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=phone-main&limit=20", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=123&limit=20", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pointStore.lastPointsFilter.DeviceID != "phone-main" {
-		t.Fatalf("expected device filter phone-main, got %+v", pointStore.lastPointsFilter)
+	if pointStore.lastPointsFilter.DeviceRowID == nil || *pointStore.lastPointsFilter.DeviceRowID != 123 {
+		t.Fatalf("expected device filter 123, got %+v", pointStore.lastPointsFilter)
 	}
 	if pointStore.lastLimit != 21 {
 		t.Fatalf("expected query limit=21 (limit+1), got %d", pointStore.lastLimit)
@@ -174,6 +174,7 @@ func TestPointsEndpoint_InvalidQueryParams(t *testing.T) {
 		"/api/v1/points?limit=bad",
 		"/api/v1/points?cursor=bad",
 		"/api/v1/points?simplify=true&max_points=bad",
+		"/api/v1/points?device_id=phone-main",
 	}
 	for _, path := range cases {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -205,9 +206,9 @@ func TestPointsEndpoint_LimitCapApplied(t *testing.T) {
 func TestPointsEndpoint_PaginationCursor(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 1, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC), Lat: 1, Lon: 1},
-			{Seq: 2, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 1, 0, 0, time.UTC), Lat: 2, Lon: 2},
-			{Seq: 3, UserID: 1, DeviceID: "d1", SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 2, 0, 0, time.UTC), Lat: 3, Lon: 3},
+			{Seq: 1, UserID: 1, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC), Lat: 1, Lon: 1},
+			{Seq: 2, UserID: 1, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 1, 0, 0, time.UTC), Lat: 2, Lon: 2},
+			{Seq: 3, UserID: 1, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Date(2026, 4, 22, 12, 2, 0, 0, time.UTC), Lat: 3, Lon: 3},
 		},
 	}
 	mux := http.NewServeMux()
@@ -259,7 +260,7 @@ func TestPointsEndpoint_SimplifyReducesLargeResponse(t *testing.T) {
 		points = append(points, store.RecentPoint{
 			Seq:          uint64(i),
 			UserID:       1,
-			DeviceID:     "d1",
+			DeviceID:     1,
 			SourceType:   "owntracks",
 			TimestampUTC: base.Add(time.Duration(i) * time.Second),
 			Lat:          40.0 + float64(i)*0.0001,
@@ -303,7 +304,7 @@ func TestRecentPointsEndpoint_DefaultLimitAndShape(t *testing.T) {
 		points: []store.RecentPoint{
 			{
 				Seq:          10,
-				DeviceID:     "phone-main",
+				DeviceID:     10,
 				SourceType:   "owntracks",
 				TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC),
 				Lat:          41.1,
@@ -333,7 +334,7 @@ func TestRecentPointsEndpoint_DefaultLimitAndShape(t *testing.T) {
 	if len(resp.Points) != 1 {
 		t.Fatalf("expected 1 point, got %d", len(resp.Points))
 	}
-	if resp.Points[0].DeviceID != "phone-main" || resp.Points[0].Seq != 10 {
+	if resp.Points[0].DeviceID != 10 || resp.Points[0].Seq != 10 {
 		t.Fatalf("unexpected point payload: %+v", resp.Points[0])
 	}
 }
@@ -343,15 +344,15 @@ func TestRecentPointsEndpoint_DeviceFilterAndLimit(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=phone-main&limit=7", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=7&limit=7", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pointStore.lastDeviceID != "phone-main" {
-		t.Fatalf("expected device_id filter phone-main, got %q", pointStore.lastDeviceID)
+	if pointStore.lastDeviceID == nil || *pointStore.lastDeviceID != 7 {
+		t.Fatalf("expected device_id filter 7, got %+v", pointStore.lastDeviceID)
 	}
 	if pointStore.lastLimit != 7 {
 		t.Fatalf("expected limit=7, got %d", pointStore.lastLimit)
@@ -372,11 +373,63 @@ func TestRecentPointsEndpoint_InvalidLimit(t *testing.T) {
 	}
 }
 
+func TestRecentPointsEndpoint_InvalidDeviceID(t *testing.T) {
+	pointStore := &fakePointStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=phone-main", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPointsEndpoint_SameNameDevices_FilteredByNumericDeviceID(t *testing.T) {
+	pointStore := &fakePointStore{
+		points: []store.RecentPoint{
+			{Seq: 1, UserID: 10, DeviceID: 101, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 10, DeviceID: 102, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+		},
+	}
+	deviceStore := &fakeDeviceStore{
+		devices: []store.Device{
+			{ID: 101, UserID: 10, Name: "phone-main", SourceType: "owntracks", APIKey: "k1", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+			{ID: 102, UserID: 10, Name: "phone-main", SourceType: "owntracks", APIKey: "k2", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		},
+	}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{
+		PointStore:   pointStore,
+		DeviceStore:  deviceStore,
+		UserStore:    &fakeUserStore{users: map[int64]store.User{10: {ID: 10, Email: "u1@example.com"}}},
+		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=101&limit=20", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp recentPointsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if len(resp.Points) != 1 || resp.Points[0].DeviceID != 101 {
+		t.Fatalf("expected only device_id=101, got %+v", resp.Points)
+	}
+}
+
 func TestRecentPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 1, UserID: 10, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -406,7 +459,7 @@ func TestRecentPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *te
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response failed: %v", err)
 	}
-	if len(resp.Points) != 1 || resp.Points[0].DeviceID != "u1-phone" {
+	if len(resp.Points) != 1 || resp.Points[0].DeviceID != 1 {
 		t.Fatalf("expected only user1 points, got %+v", resp.Points)
 	}
 }
@@ -414,7 +467,7 @@ func TestRecentPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *te
 func TestRecentPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -431,7 +484,7 @@ func TestRecentPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t 
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=u2-phone&limit=20", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points/recent?device_id=2&limit=20", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -469,8 +522,8 @@ func TestRecentPointsEndpoint_UnauthenticatedDenied_WhenSessionAuthEnabled(t *te
 func TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 1, UserID: 10, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -500,7 +553,7 @@ func TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response failed: %v", err)
 	}
-	if len(resp.Points) != 1 || resp.Points[0].DeviceID != "u1-phone" {
+	if len(resp.Points) != 1 || resp.Points[0].DeviceID != 1 {
 		t.Fatalf("expected only user1 points, got %+v", resp.Points)
 	}
 }
@@ -508,7 +561,7 @@ func TestPointsEndpoint_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.
 func TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -525,7 +578,7 @@ func TestPointsEndpoint_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testi
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=u2-phone&limit=20", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/points?device_id=2&limit=20", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

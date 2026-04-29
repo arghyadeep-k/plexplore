@@ -73,6 +73,17 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 		if ok {
 			filter.UserID = currentUser.ID
 		}
+		if filter.DeviceRowID != nil && deviceStore != nil {
+			allowedDevices, allowedErr := currentUserAllowedDeviceIDs(r, deviceStore)
+			if allowedErr != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(allowedErr), allowedErr.Error())
+				return
+			}
+			if _, allowed := allowedDevices[*filter.DeviceRowID]; !allowed {
+				writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
+				return
+			}
+		}
 
 		limit, err := parseOptionalLimitParamWithMax(r, defaultExportLimit, maxExportLimit)
 		if err != nil {
@@ -125,7 +136,10 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 }
 
 func exportFilterFromRequest(r *http.Request) (store.ExportPointFilter, error) {
-	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	deviceID, hasDeviceID, err := parseOptionalDeviceIDParam(r.URL.Query().Get("device_id"))
+	if err != nil {
+		return store.ExportPointFilter{}, err
+	}
 
 	from, err := parseOptionalRFC3339Param(r.URL.Query().Get("from"))
 	if err != nil {
@@ -136,11 +150,14 @@ func exportFilterFromRequest(r *http.Request) (store.ExportPointFilter, error) {
 		return store.ExportPointFilter{}, err
 	}
 
-	return store.ExportPointFilter{
-		DeviceID: deviceID,
-		FromUTC:  from,
-		ToUTC:    to,
-	}, nil
+	filter := store.ExportPointFilter{
+		FromUTC: from,
+		ToUTC:   to,
+	}
+	if hasDeviceID {
+		filter.DeviceRowID = &deviceID
+	}
+	return filter, nil
 }
 
 func parseOptionalRFC3339Param(raw string) (*time.Time, error) {
@@ -202,6 +219,17 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 		}
 		if ok {
 			filter.UserID = currentUser.ID
+		}
+		if filter.DeviceRowID != nil && deviceStore != nil {
+			allowedDevices, allowedErr := currentUserAllowedDeviceIDs(r, deviceStore)
+			if allowedErr != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(allowedErr), allowedErr.Error())
+				return
+			}
+			if _, allowed := allowedDevices[*filter.DeviceRowID]; !allowed {
+				writeEmptyGPX(w)
+				return
+			}
 		}
 
 		limit, err := parseOptionalLimitParamWithMax(r, defaultExportLimit, maxExportLimit)

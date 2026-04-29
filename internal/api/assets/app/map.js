@@ -27,13 +27,7 @@
   function buildPointsQuery() {
     const params = new URLSearchParams();
     const select = document.getElementById("device_select");
-    const deviceIDRaw = select.value.trim();
-    let deviceName = "";
-    if (deviceIDRaw) {
-      const selected = select.options[select.selectedIndex];
-      deviceName = (selected && selected.getAttribute("data-device-name")) || "";
-      deviceName = deviceName.trim();
-    }
+    const deviceID = select.value.trim();
     const fromDate = document.getElementById("date_from").value.trim();
     const toDate = document.getElementById("date_to").value.trim();
     const limitRaw = document.getElementById("limit").value.trim();
@@ -56,8 +50,8 @@
       simplifyMaxPoints = 1000;
     }
 
-    if (deviceName) {
-      params.set("device_id", deviceName);
+    if (deviceID) {
+      params.set("device_id", deviceID);
     }
     if (fromDate) {
       params.set("from", dayStartRFC3339(fromDate));
@@ -196,8 +190,6 @@
           options.push(
             "<option value='" +
               String(d.id) +
-              "' data-device-name='" +
-              escapedName +
               "'>" +
               escapedName +
               "</option>",

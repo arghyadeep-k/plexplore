@@ -340,6 +340,12 @@ func TestUIAssets_MapScriptContainsEscapedPopupFields(t *testing.T) {
 	if !strings.Contains(body, "/api/v1/visits") || !strings.Contains(body, "/api/v1/points?") {
 		t.Fatalf("expected map js to query points and visits endpoints, got %q", body)
 	}
+	if !strings.Contains(body, `params.set("device_id", deviceID)`) {
+		t.Fatalf("expected map js to send numeric device_id filter value, got %q", body)
+	}
+	if strings.Contains(body, "data-device-name") {
+		t.Fatalf("expected map js to avoid name-based filter wiring, got %q", body)
+	}
 	if !strings.Contains(body, `params.set("simplify", simplify ? "true" : "false")`) || !strings.Contains(body, `params.set("max_points"`) {
 		t.Fatalf("expected map js to request simplification controls, got %q", body)
 	}

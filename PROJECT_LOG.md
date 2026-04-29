@@ -4569,3 +4569,63 @@ Pending:
 
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
+
+### 2026-04-29 02:20 UTC - Phase 89 (Points/Exports Numeric Device Filter Semantics)
+Implemented:
+- Fixed points/recent/export filter semantics to treat `device_id` as stable numeric device row ID instead of `devices.name`.
+- Store-layer point queries now filter by `raw_points.device_id` (`int64`) when device filter is present.
+- API parsing now rejects non-numeric `device_id` with `400` for:
+- `GET /api/v1/points`
+- `GET /api/v1/points/recent`
+- `GET /api/v1/exports/geojson`
+- `GET /api/v1/exports/gpx`
+- Added authenticated ownership checks for numeric device filters:
+- cross-user device IDs return empty result payloads for points/recent/exports (consistent with existing style).
+- Updated map UI filtering:
+- `/ui/map` device dropdown keeps names as labels
+- numeric option values are sent directly as `device_id` query param
+- removed name-based `data-device-name` request path for points filter
+- Updated test coverage:
+- numeric points/recent/export filter behavior
+- non-numeric `device_id` `400` handling
+- same-name device isolation via numeric row IDs
+- map script assertion for numeric `device_id` query usage
+- Updated README examples and parameter descriptions to use numeric `device_id` in points/recent/exports sections.
+
+Architectural decisions:
+- Decision: Keep API parameter name `device_id` but enforce strict numeric row-ID semantics.
+  Reason: preserves endpoint compatibility while removing misleading name-based behavior and ambiguity.
+- Decision: Keep device names as display labels only in UI.
+  Reason: stable identity and authorization boundaries should remain numeric/user-scoped.
+
+Files changed:
+- `internal/store/points.go`
+- `internal/store/sqlite_store_test.go`
+- `internal/api/health.go`
+- `internal/api/points.go`
+- `internal/api/exports.go`
+- `internal/api/points_test.go`
+- `internal/api/exports_test.go`
+- `internal/api/ui_test.go`
+- `internal/api/assets/app/map.js`
+- `internal/tasks/multi_user_auth_integration_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/store/points.go internal/store/sqlite_store_test.go internal/api/health.go internal/api/points.go internal/api/exports.go internal/api/points_test.go internal/api/exports_test.go internal/api/ui_test.go internal/tasks/multi_user_auth_integration_test.go`
+- `go test ./internal/store -run 'TestSQLiteStore_(ListRecentPoints|ListPointsForExport_WithFilters|ListPoints_WithFiltersAndAscendingOrder|StreamPointsForExport_WithLimit)' -count=1`
+- `go test ./internal/api -run 'Test(PointsEndpoint_|RecentPointsEndpoint_|GeoJSONExport_|GPXExport_|UIAssets_MapScriptContainsEscapedPopupFields)' -count=1`
+- `go test ./...`
+- `go test ./internal/api`
+- `go test ./internal/store`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+
+Pending:
+- Add checkpoint retry pressure fields to authenticated `/api/v1/status`.
+- Add store-backed integration test for scheduler telemetry + watermark summary values under mixed device update/no-op runs.
+- Run manual runtime CSP validation for map tile modes (`none`, `osm`, `custom`).
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.

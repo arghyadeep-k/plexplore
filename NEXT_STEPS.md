@@ -1,15 +1,17 @@
 # Next Steps
 
 ## Current milestone
-Authenticated browser admin smoke workflow is now covered end-to-end (login/session/CSRF/device rotate/visit generate)
+Stable numeric `device_id` filtering is now enforced for points, recent points, exports, and map UI requests.
 
 ## Next 3 tasks
-1. Add checkpoint retry pressure fields to `/api/v1/status` (failure count and last checkpoint error time)
+1. Add checkpoint retry pressure fields to authenticated `/api/v1/status` (failure count and last checkpoint error time)
 2. Add store-backed integration test for scheduler telemetry + watermark summary values under mixed device update/no-op runs
 3. Run manual runtime CSP validation for map tile modes (`none`, `osm`, `custom`) with live `curl -I` and browser map load checks
 
 ## Commands
 - `go test ./...`
+- `go test ./internal/api -run 'Test(PointsEndpoint_SameNameDevices_FilteredByNumericDeviceID|RecentPointsEndpoint_InvalidDeviceID|GeoJSONExport_InvalidDeviceIDQuery|UIAssets_MapScriptContainsEscapedPopupFields)' -count=1`
+- `go test ./internal/store -run 'TestSQLiteStore_(ListRecentPoints|ListPointsForExport_WithFilters|ListPoints_WithFiltersAndAscendingOrder|StreamPointsForExport_WithLimit)' -count=1`
 - `go test ./internal/tasks -run TestVisitScheduler -count=1`
 - `go test ./internal/flusher`
 - `go test ./internal/tasks -run TestIntegration -count=1`
@@ -110,14 +112,14 @@ Authenticated browser admin smoke workflow is now covered end-to-end (login/sess
 - `curl -sS http://127.0.0.1:8080/api/v1/devices/1`
 - `curl -X POST http://127.0.0.1:8080/api/v1/devices/1/rotate-key -H "Content-Type: application/json" -d '{}'`
 - `curl -sS "http://127.0.0.1:8080/api/v1/points/recent?limit=20"`
-- `curl -sS "http://127.0.0.1:8080/api/v1/points?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"`
-- `curl -X POST "http://127.0.0.1:8080/api/v1/visits/generate?device_id=phone-main"`
-- `curl -X POST "http://127.0.0.1:8080/api/v1/visits/generate?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&min_dwell=20m&max_radius_m=40"`
-- `curl -sS "http://127.0.0.1:8080/api/v1/visits?device_id=phone-main&limit=100"`
-- `curl -sS "http://127.0.0.1:8080/api/v1/visits?device_id=phone-main&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&limit=100"`
+- `curl -sS "http://127.0.0.1:8080/api/v1/points?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"`
+- `curl -X POST "http://127.0.0.1:8080/api/v1/visits/generate?device_id=1"`
+- `curl -X POST "http://127.0.0.1:8080/api/v1/visits/generate?device_id=1&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&min_dwell=20m&max_radius_m=40"`
+- `curl -sS "http://127.0.0.1:8080/api/v1/visits?device_id=1&limit=100"`
+- `curl -sS "http://127.0.0.1:8080/api/v1/visits?device_id=1&from=2026-04-20T00:00:00Z&to=2026-04-22T23:59:59Z&limit=100"`
 - `curl -sS http://127.0.0.1:8080/ui/map`
-- `curl -sS "http://127.0.0.1:8080/api/v1/exports/geojson?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
-- `curl -sS "http://127.0.0.1:8080/api/v1/exports/gpx?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
+- `curl -sS "http://127.0.0.1:8080/api/v1/exports/geojson?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
+- `curl -sS "http://127.0.0.1:8080/api/v1/exports/gpx?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
 - `sqlite3 ./data/plexplore.db "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM raw_points; SELECT COUNT(*) FROM points;"`
 
 ## Notes

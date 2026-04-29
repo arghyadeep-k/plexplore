@@ -17,7 +17,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 		points: []store.RecentPoint{
 			{
 				Seq:          5,
-				DeviceID:     "phone-main",
+				DeviceID:     5,
 				SourceType:   "owntracks",
 				TimestampUTC: time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC),
 				Lat:          41.25,
@@ -29,7 +29,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?device_id=phone-main&from=2026-04-22T11:00:00Z&to=2026-04-22T13:00:00Z", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?device_id=5&from=2026-04-22T11:00:00Z&to=2026-04-22T13:00:00Z", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -42,7 +42,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.geojson") {
 		t.Fatalf("expected download filename header, got %q", rec.Header().Get("Content-Disposition"))
 	}
-	if pointStore.lastExportFilter.DeviceID != "phone-main" {
+	if pointStore.lastExportFilter.DeviceRowID == nil || *pointStore.lastExportFilter.DeviceRowID != 5 {
 		t.Fatalf("expected device filter phone-main, got %+v", pointStore.lastExportFilter)
 	}
 	if !pointStore.streamCalled {
@@ -95,12 +95,26 @@ func TestGeoJSONExport_InvalidTimestampQuery(t *testing.T) {
 	}
 }
 
+func TestGeoJSONExport_InvalidDeviceIDQuery(t *testing.T) {
+	pointStore := &fakePointStore{}
+	mux := http.NewServeMux()
+	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/geojson?device_id=phone-main", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
 			{
 				Seq:          11,
-				DeviceID:     "phone-main",
+				DeviceID:     5,
 				SourceType:   "owntracks",
 				TimestampUTC: time.Date(2026, 4, 22, 12, 30, 0, 0, time.UTC),
 				Lat:          41.2,
@@ -108,7 +122,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 			},
 			{
 				Seq:          12,
-				DeviceID:     "phone-main",
+				DeviceID:     5,
 				SourceType:   "owntracks",
 				TimestampUTC: time.Date(2026, 4, 22, 12, 31, 0, 0, time.UTC),
 				Lat:          41.21,
@@ -120,7 +134,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	mux := http.NewServeMux()
 	registerRoutesWithTestFallbacks(mux, Dependencies{PointStore: pointStore})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=phone-main", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=5", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -160,7 +174,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 func TestExportEndpoints_LimitCapApplied(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 1, DeviceID: "phone-main", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 1, Lon: 1},
+			{Seq: 1, DeviceID: 5, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 1, Lon: 1},
 		},
 	}
 
@@ -205,8 +219,8 @@ func TestGPXExport_InvalidTimestampQuery(t *testing.T) {
 func TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 1, UserID: 10, DeviceID: "u1-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 1, UserID: 10, DeviceID: 1, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 41.0, Lon: -87.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -238,7 +252,7 @@ func TestGeoJSONExport_UserSeesOnlyOwnPoints_WhenSessionAuthEnabled(t *testing.T
 	if len(payload.Features) != 1 {
 		t.Fatalf("expected 1 feature, got %d", len(payload.Features))
 	}
-	if payload.Features[0].Properties["device_id"] != "u1-phone" {
+	if payload.Features[0].Properties["device_id"] != float64(1) {
 		t.Fatalf("expected u1-phone only, got %+v", payload.Features[0].Properties)
 	}
 }
@@ -264,7 +278,7 @@ func TestGeoJSONExport_UnauthenticatedDenied_WhenSessionAuthEnabled(t *testing.T
 func TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T) {
 	pointStore := &fakePointStore{
 		points: []store.RecentPoint{
-			{Seq: 2, UserID: 11, DeviceID: "u2-phone", SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
+			{Seq: 2, UserID: 11, DeviceID: 2, SourceType: "owntracks", TimestampUTC: time.Now().UTC(), Lat: 42.0, Lon: -88.0},
 		},
 	}
 	deviceStore := &fakeDeviceStore{
@@ -281,7 +295,7 @@ func TestGPXExport_DeviceFilterTrickBlocked_WhenSessionAuthEnabled(t *testing.T)
 		SessionStore: &fakeSessionStore{sessionByToken: map[string]store.Session{"token-u1": {Token: "token-u1", UserID: 10, ExpiresAt: time.Now().UTC().Add(time.Hour)}}},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=u2-phone", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exports/gpx?device_id=2", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "token-u1"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

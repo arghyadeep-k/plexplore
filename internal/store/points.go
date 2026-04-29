@@ -11,7 +11,7 @@ import (
 type RecentPoint struct {
 	Seq          uint64
 	UserID       int64
-	DeviceID     string
+	DeviceID     int64
 	SourceType   string
 	TimestampUTC time.Time
 	Lat          float64
@@ -20,9 +20,9 @@ type RecentPoint struct {
 
 // ExportPointFilter controls optional filtering for export endpoints.
 type ExportPointFilter struct {
-	DeviceID string
-	FromUTC  *time.Time
-	ToUTC    *time.Time
+	DeviceRowID *int64
+	FromUTC     *time.Time
+	ToUTC       *time.Time
 	// AfterSeq enables cursor pagination for ascending point queries.
 	// When > 0, only rows with seq > AfterSeq are returned.
 	AfterSeq uint64
@@ -30,7 +30,7 @@ type ExportPointFilter struct {
 	UserID int64
 }
 
-func (s *SQLiteStore) ListRecentPoints(ctx context.Context, deviceID string, limit int) ([]RecentPoint, error) {
+func (s *SQLiteStore) ListRecentPoints(ctx context.Context, deviceRowID *int64, limit int) ([]RecentPoint, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -38,17 +38,15 @@ func (s *SQLiteStore) ListRecentPoints(ctx context.Context, deviceID string, lim
 		limit = 500
 	}
 
-	device := strings.TrimSpace(deviceID)
 	baseSQL := `
-SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, rp.device_id, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
-JOIN devices d ON d.id = rp.device_id
 `
 
 	args := make([]any, 0, 2)
-	if device != "" {
-		baseSQL += "WHERE d.name = ?\n"
-		args = append(args, device)
+	if deviceRowID != nil {
+		baseSQL += "WHERE rp.device_id = ?\n"
+		args = append(args, *deviceRowID)
 	}
 	baseSQL += "ORDER BY rp.timestamp_utc DESC, rp.seq DESC\nLIMIT ?;"
 	args = append(args, limit)
@@ -96,18 +94,16 @@ func (s *SQLiteStore) ListPoints(ctx context.Context, filter ExportPointFilter, 
 	}
 
 	baseSQL := `
-SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, rp.device_id, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
-JOIN devices d ON d.id = rp.device_id
 `
 
 	whereParts := make([]string, 0, 5)
 	args := make([]any, 0, 6)
 
-	device := strings.TrimSpace(filter.DeviceID)
-	if device != "" {
-		whereParts = append(whereParts, "d.name = ?")
-		args = append(args, device)
+	if filter.DeviceRowID != nil {
+		whereParts = append(whereParts, "rp.device_id = ?")
+		args = append(args, *filter.DeviceRowID)
 	}
 	if filter.UserID > 0 {
 		whereParts = append(whereParts, "rp.user_id = ?")
@@ -178,18 +174,16 @@ func (s *SQLiteStore) StreamPointsForExport(ctx context.Context, filter ExportPo
 	}
 
 	baseSQL := `
-SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, rp.device_id, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
-JOIN devices d ON d.id = rp.device_id
 `
 
 	whereParts := make([]string, 0, 5)
 	args := make([]any, 0, 6)
 
-	device := strings.TrimSpace(filter.DeviceID)
-	if device != "" {
-		whereParts = append(whereParts, "d.name = ?")
-		args = append(args, device)
+	if filter.DeviceRowID != nil {
+		whereParts = append(whereParts, "rp.device_id = ?")
+		args = append(args, *filter.DeviceRowID)
 	}
 	if filter.UserID > 0 {
 		whereParts = append(whereParts, "rp.user_id = ?")
@@ -253,18 +247,16 @@ JOIN devices d ON d.id = rp.device_id
 
 func (s *SQLiteStore) ListPointsForExport(ctx context.Context, filter ExportPointFilter) ([]RecentPoint, error) {
 	baseSQL := `
-SELECT rp.seq, rp.user_id, d.name, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
+SELECT rp.seq, rp.user_id, rp.device_id, rp.source_type, rp.timestamp_utc, rp.lat, rp.lon
 FROM raw_points rp
-JOIN devices d ON d.id = rp.device_id
 `
 
 	whereParts := make([]string, 0, 3)
 	args := make([]any, 0, 3)
 
-	device := strings.TrimSpace(filter.DeviceID)
-	if device != "" {
-		whereParts = append(whereParts, "d.name = ?")
-		args = append(args, device)
+	if filter.DeviceRowID != nil {
+		whereParts = append(whereParts, "rp.device_id = ?")
+		args = append(args, *filter.DeviceRowID)
 	}
 	if filter.FromUTC != nil {
 		whereParts = append(whereParts, "rp.timestamp_utc >= ?")

@@ -241,8 +241,12 @@ func TestSQLiteStore_ListRecentPoints(t *testing.T) {
 	if _, err := s.InsertSpoolBatch(records); err != nil {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
+	var device1ID int64
+	if err := s.db.QueryRow(`SELECT id FROM devices WHERE user_id = 1 AND name = ?;`, "d1").Scan(&device1ID); err != nil {
+		t.Fatalf("lookup device id d1 failed: %v", err)
+	}
 
-	all, err := s.ListRecentPoints(context.Background(), "", 2)
+	all, err := s.ListRecentPoints(context.Background(), nil, 2)
 	if err != nil {
 		t.Fatalf("ListRecentPoints all failed: %v", err)
 	}
@@ -253,7 +257,7 @@ func TestSQLiteStore_ListRecentPoints(t *testing.T) {
 		t.Fatalf("unexpected recent ordering: %+v", all)
 	}
 
-	filtered, err := s.ListRecentPoints(context.Background(), "d1", 10)
+	filtered, err := s.ListRecentPoints(context.Background(), &device1ID, 10)
 	if err != nil {
 		t.Fatalf("ListRecentPoints filtered failed: %v", err)
 	}
@@ -261,7 +265,7 @@ func TestSQLiteStore_ListRecentPoints(t *testing.T) {
 		t.Fatalf("expected 2 points for d1, got %d", len(filtered))
 	}
 	for _, p := range filtered {
-		if p.DeviceID != "d1" {
+		if p.DeviceID != device1ID {
 			t.Fatalf("expected only device d1 points, got %+v", filtered)
 		}
 	}
@@ -279,13 +283,17 @@ func TestSQLiteStore_ListPointsForExport_WithFilters(t *testing.T) {
 	if _, err := s.InsertSpoolBatch(records); err != nil {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
+	var device1ID int64
+	if err := s.db.QueryRow(`SELECT id FROM devices WHERE user_id = 1 AND name = ?;`, "d1").Scan(&device1ID); err != nil {
+		t.Fatalf("lookup device id d1 failed: %v", err)
+	}
 
 	from := base.Add(10 * time.Minute)
 	to := base.Add(45 * time.Minute)
 	points, err := s.ListPointsForExport(context.Background(), ExportPointFilter{
-		DeviceID: "d1",
-		FromUTC:  &from,
-		ToUTC:    &to,
+		DeviceRowID: &device1ID,
+		FromUTC:     &from,
+		ToUTC:       &to,
 	})
 	if err != nil {
 		t.Fatalf("ListPointsForExport failed: %v", err)
@@ -293,7 +301,7 @@ func TestSQLiteStore_ListPointsForExport_WithFilters(t *testing.T) {
 	if len(points) != 1 {
 		t.Fatalf("expected 1 filtered export point, got %d", len(points))
 	}
-	if points[0].Seq != 2 || points[0].DeviceID != "d1" {
+	if points[0].Seq != 2 || points[0].DeviceID != device1ID {
 		t.Fatalf("unexpected filtered export point: %+v", points[0])
 	}
 }
@@ -310,13 +318,17 @@ func TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder(t *testing.T) {
 	if _, err := s.InsertSpoolBatch(records); err != nil {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
+	var device1ID int64
+	if err := s.db.QueryRow(`SELECT id FROM devices WHERE user_id = 1 AND name = ?;`, "d1").Scan(&device1ID); err != nil {
+		t.Fatalf("lookup device id d1 failed: %v", err)
+	}
 
 	from := base.Add(10 * time.Minute)
 	to := base.Add(70 * time.Minute)
 	points, err := s.ListPoints(context.Background(), ExportPointFilter{
-		DeviceID: "d1",
-		FromUTC:  &from,
-		ToUTC:    &to,
+		DeviceRowID: &device1ID,
+		FromUTC:     &from,
+		ToUTC:       &to,
 	}, 10)
 	if err != nil {
 		t.Fatalf("ListPoints failed: %v", err)
@@ -324,7 +336,7 @@ func TestSQLiteStore_ListPoints_WithFiltersAndAscendingOrder(t *testing.T) {
 	if len(points) != 1 {
 		t.Fatalf("expected 1 filtered point, got %d", len(points))
 	}
-	if points[0].Seq != 2 || points[0].DeviceID != "d1" {
+	if points[0].Seq != 2 || points[0].DeviceID != device1ID {
 		t.Fatalf("unexpected point %+v", points[0])
 	}
 
@@ -382,9 +394,13 @@ func TestSQLiteStore_StreamPointsForExport_WithLimit(t *testing.T) {
 	if _, err := s.InsertSpoolBatch(records); err != nil {
 		t.Fatalf("InsertSpoolBatch failed: %v", err)
 	}
+	var device1ID int64
+	if err := s.db.QueryRow(`SELECT id FROM devices WHERE user_id = 1 AND name = ?;`, "d1").Scan(&device1ID); err != nil {
+		t.Fatalf("lookup device id d1 failed: %v", err)
+	}
 
 	gotSeq := make([]uint64, 0, 2)
-	count, err := s.StreamPointsForExport(context.Background(), ExportPointFilter{DeviceID: "d1"}, 2, func(point RecentPoint) error {
+	count, err := s.StreamPointsForExport(context.Background(), ExportPointFilter{DeviceRowID: &device1ID}, 2, func(point RecentPoint) error {
 		gotSeq = append(gotSeq, point.Seq)
 		return nil
 	})

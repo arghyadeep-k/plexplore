@@ -335,7 +335,7 @@ Included fields (when available):
 - requires signed-in user session
 - results are scoped to current user's devices only
 - query params:
-- `device_id` (optional): device name filter
+- `device_id` (optional): stable numeric device row ID filter
 - `limit` (optional): max rows (default `50`, max `500`)
 
 Examples:
@@ -345,7 +345,7 @@ Examples:
 curl -sS "http://localhost:8080/api/v1/points/recent"
 
 # recent points for one device
-curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=20"
+curl -sS "http://localhost:8080/api/v1/points/recent?device_id=1&limit=20"
 ```
 
 ## Point History (Map-Friendly)
@@ -357,7 +357,7 @@ curl -sS "http://localhost:8080/api/v1/points/recent?device_id=phone-main&limit=
 - optional query params:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
-- `device_id` (device name)
+- `device_id` (stable numeric device row ID)
 - `limit` (default `500`, hard max `1000`)
 - `cursor` (optional `seq` from prior response for pagination)
 - `simplify` (optional bool): enable backend downsampling mode for large map queries
@@ -380,7 +380,7 @@ Examples:
 curl -sS "http://localhost:8080/api/v1/points"
 
 # filtered point history for map view
-curl -sS "http://localhost:8080/api/v1/points?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"
+curl -sS "http://localhost:8080/api/v1/points?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=1000"
 
 # pagination with cursor
 curl -sS "http://localhost:8080/api/v1/points?limit=500"
@@ -464,7 +464,7 @@ curl -sS "http://localhost:8080/api/v1/visits?device_id=1&from=2026-04-20T00:00:
 - optional filters:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
-- `device_id` (device name)
+- `device_id` (stable numeric device row ID)
 - `limit` (optional, default `5000`, hard max `20000`)
 - response is streamed row-by-row to reduce RAM usage on low-memory devices
 
@@ -475,10 +475,10 @@ Examples:
 curl -sS "http://localhost:8080/api/v1/exports/geojson"
 
 # filtered GeoJSON export
-curl -sS "http://localhost:8080/api/v1/exports/geojson?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=10000"
+curl -sS "http://localhost:8080/api/v1/exports/geojson?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=10000"
 
 # download to file with server-suggested filename
-curl -LJO "http://localhost:8080/api/v1/exports/geojson?device_id=phone-main"
+curl -LJO "http://localhost:8080/api/v1/exports/geojson?device_id=1"
 ```
 
 ## GPX Export
@@ -490,7 +490,7 @@ curl -LJO "http://localhost:8080/api/v1/exports/geojson?device_id=phone-main"
 - optional filters:
 - `from` (RFC3339 timestamp)
 - `to` (RFC3339 timestamp)
-- `device_id` (device name)
+- `device_id` (stable numeric device row ID)
 - `limit` (optional, default `5000`, hard max `20000`)
 - response is streamed row-by-row to reduce RAM usage on low-memory devices
 
@@ -501,10 +501,10 @@ Examples:
 curl -sS "http://localhost:8080/api/v1/exports/gpx"
 
 # filtered GPX export
-curl -sS "http://localhost:8080/api/v1/exports/gpx?device_id=phone-main&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=10000"
+curl -sS "http://localhost:8080/api/v1/exports/gpx?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z&limit=10000"
 
 # download to file with server-suggested filename
-curl -LJO "http://localhost:8080/api/v1/exports/gpx?device_id=phone-main"
+curl -LJO "http://localhost:8080/api/v1/exports/gpx?device_id=1"
 ```
 
 ## Shutdown And Recovery Behavior

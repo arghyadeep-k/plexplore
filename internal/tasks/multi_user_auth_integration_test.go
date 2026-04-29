@@ -139,13 +139,13 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	}
 	var pointsResp struct {
 		Points []struct {
-			DeviceID string `json:"device_id"`
+			DeviceID int64 `json:"device_id"`
 		} `json:"points"`
 	}
 	if err := json.Unmarshal(pointsU2.Body.Bytes(), &pointsResp); err != nil {
 		t.Fatalf("unmarshal user2 points failed: %v", err)
 	}
-	if len(pointsResp.Points) != 1 || pointsResp.Points[0].DeviceID != device2.name {
+	if len(pointsResp.Points) != 1 || pointsResp.Points[0].DeviceID != device2.id {
 		t.Fatalf("expected user2 to see only own points, got %+v", pointsResp.Points)
 	}
 
@@ -164,8 +164,8 @@ func TestIntegration_MultiUserAuthorizationIsolation(t *testing.T) {
 	if len(geo.Features) != 1 {
 		t.Fatalf("expected one feature in user3 export, got %d", len(geo.Features))
 	}
-	if got := geo.Features[0].Properties["device_id"]; got != device3.name {
-		t.Fatalf("expected user3 export device_id=%q, got %+v", device3.name, got)
+	if got := geo.Features[0].Properties["device_id"]; got != float64(device3.id) {
+		t.Fatalf("expected user3 export device_id=%d, got %+v", device3.id, got)
 	}
 
 	if got := queryInt(t, env.dbPath, `SELECT COUNT(*) FROM raw_points WHERE device_id = ?;`, device2.id); got != 1 {

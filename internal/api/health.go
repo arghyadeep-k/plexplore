@@ -79,7 +79,7 @@ type FlushTrigger interface {
 }
 
 type PointStore interface {
-	ListRecentPoints(rctx context.Context, deviceID string, limit int) ([]store.RecentPoint, error)
+	ListRecentPoints(rctx context.Context, deviceRowID *int64, limit int) ([]store.RecentPoint, error)
 	ListPoints(rctx context.Context, filter store.ExportPointFilter, limit int) ([]store.RecentPoint, error)
 	ListPointsForExport(rctx context.Context, filter store.ExportPointFilter) ([]store.RecentPoint, error)
 	StreamPointsForExport(rctx context.Context, filter store.ExportPointFilter, limit int, fn func(store.RecentPoint) error) (int, error)

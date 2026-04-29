@@ -11,7 +11,7 @@ import (
 
 type recentPointResponse struct {
 	Seq          uint64  `json:"seq"`
-	DeviceID     string  `json:"device_id"`
+	DeviceID     int64   `json:"device_id"`
 	SourceType   string  `json:"source_type"`
 	TimestampUTC string  `json:"timestamp_utc"`
 	Lat          float64 `json:"lat"`
@@ -78,6 +78,17 @@ func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerF
 		if ok {
 			filter.UserID = currentUser.ID
 		}
+		if filter.DeviceRowID != nil && deviceStore != nil {
+			allowedDeviceIDs, err := currentUserAllowedDeviceIDs(r, deviceStore)
+			if err != nil {
+				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
+				return
+			}
+			if _, allowed := allowedDeviceIDs[*filter.DeviceRowID]; !allowed {
+				writeJSON(w, http.StatusOK, pointsPageResponse{Points: []recentPointResponse{}})
+				return
+			}
+		}
 
 		limit, err := parseOptionalLimitParamWithMax(r, defaultPointsLimit, maxPointsLimit)
 		if err != nil {
@@ -140,7 +151,11 @@ func pointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerF
 
 func recentPointsHandler(pointStore PointStore, deviceStore DeviceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+		deviceID, hasDeviceID, err := parseOptionalDeviceIDParam(r.URL.Query().Get("device_id"))
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		limit, err := parseOptionalLimitParam(r, 50)
 		if err != nil {
@@ -148,27 +163,41 @@ func recentPointsHandler(pointStore PointStore, deviceStore DeviceStore) http.Ha
 			return
 		}
 
-		points, err := pointStore.ListRecentPoints(r.Context(), deviceID, limit)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
+		var allowedDeviceIDs map[int64]struct{}
+		var currentUserID int64
 		if deviceStore != nil {
 			currentUser, ok := CurrentUserFromContext(r.Context())
 			if !ok {
 				writeJSONError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
-			allowedDeviceIDs, err := currentUserAllowedDeviceIDs(r, deviceStore)
+			currentUserID = currentUser.ID
+			allowedDeviceIDs, err = currentUserAllowedDeviceIDs(r, deviceStore)
 			if err != nil {
 				writeJSONError(w, httpStatusFromOwnershipError(err), err.Error())
 				return
 			}
+			if hasDeviceID {
+				if _, allowed := allowedDeviceIDs[deviceID]; !allowed {
+					writeJSON(w, http.StatusOK, recentPointsResponse{Points: []recentPointResponse{}})
+					return
+				}
+			}
+		}
 
+		var filterDeviceID *int64
+		if hasDeviceID {
+			filterDeviceID = &deviceID
+		}
+		points, err := pointStore.ListRecentPoints(r.Context(), filterDeviceID, limit)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if deviceStore != nil {
 			filtered := make([]store.RecentPoint, 0, len(points))
 			for _, point := range points {
-				if _, allowed := allowedDeviceIDs[point.DeviceID]; allowed && point.UserID == currentUser.ID {
+				if _, allowed := allowedDeviceIDs[point.DeviceID]; allowed && point.UserID == currentUserID {
 					filtered = append(filtered, point)
 				}
 			}
@@ -191,7 +220,7 @@ func recentPointsHandler(pointStore PointStore, deviceStore DeviceStore) http.Ha
 	}
 }
 
-func currentUserAllowedDeviceIDs(r *http.Request, deviceStore DeviceStore) (map[string]struct{}, error) {
+func currentUserAllowedDeviceIDs(r *http.Request, deviceStore DeviceStore) (map[int64]struct{}, error) {
 	currentUser, ok := CurrentUserFromContext(r.Context())
 	if !ok {
 		return nil, errAuthRequired
@@ -200,10 +229,10 @@ func currentUserAllowedDeviceIDs(r *http.Request, deviceStore DeviceStore) (map[
 	if err != nil {
 		return nil, errDeviceLookupFailed
 	}
-	allowedDeviceIDs := make(map[string]struct{})
+	allowedDeviceIDs := make(map[int64]struct{})
 	for _, d := range devices {
 		if d.UserID == currentUser.ID {
-			allowedDeviceIDs[d.Name] = struct{}{}
+			allowedDeviceIDs[d.ID] = struct{}{}
 		}
 	}
 	return allowedDeviceIDs, nil
