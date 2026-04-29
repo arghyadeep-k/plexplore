@@ -574,6 +574,7 @@ Plexplore durability depends on both:
 Use the provided scripts:
 - `scripts/backup.sh`
 - `scripts/restore.sh`
+- `scripts/verify_backup_restore.sh` (automated DR drill)
 
 ### Online backup (service running)
 
@@ -636,6 +637,26 @@ Restore script behavior:
 - takes a pre-restore safety copy of current DB/spool
 - restores SQLite file plus spool/checkpoint content
 - reminds about service file permissions
+
+### Automated backup/restore verification
+
+Run the disaster-recovery drill script:
+
+```bash
+make verify-backup-restore
+# or:
+bash ./scripts/verify_backup_restore.sh
+```
+
+Verification checks include:
+- backup archive is created
+- archive contains sqlite snapshot + spool checkpoint/segment files + manifest
+- archive does not include unrelated source-dir junk files
+- backup script exits nonzero when sqlite path is missing
+- restore into clean target succeeds
+- restored DB passes `PRAGMA integrity_check`
+- restored rows exist for users/devices/raw_points/points/visits/visit_generation_state
+- restored spool/checkpoint files exist and are readable
 
 ### Retention suggestions
 

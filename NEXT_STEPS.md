@@ -22,6 +22,8 @@ Authenticated browser admin smoke workflow is now covered end-to-end (login/sess
 - `go test ./internal/api -run 'Test(PointsEndpoint_LimitCapApplied|PointsEndpoint_PaginationCursor|GeoJSONExport_ValidStructure|GPXExport_ValidStructureAndContent|ExportEndpoints_LimitCapApplied)' -count=1`
 - `go test ./internal/api -run 'Test(MapPageServedAtUIMap|UIAssets_MapScriptContainsEscapedPopupFields|PointsEndpoint_SimplifyReducesLargeResponse|PointsEndpoint_PaginationCursor)' -count=1`
 - `bash -n scripts/backup.sh scripts/restore.sh`
+- `bash -n scripts/backup.sh scripts/restore.sh scripts/verify_backup_restore.sh`
+- `make verify-backup-restore`
 - `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir ./backups`
 - `scripts/restore.sh --archive ./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz --sqlite-path ./data/plexplore.db --spool-dir ./data/spool`
 - `curl -I https://your-domain.example`

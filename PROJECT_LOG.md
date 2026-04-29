@@ -3923,6 +3923,53 @@ Pending:
 Known issues:
 - `go test ./internal/api -run TestBrowserAdminWorkflowSmoke -count=1` reports `[no tests to run]` because the smoke test lives in `internal/tasks` by design.
 
+### 2026-04-28 20:52 CDT - Phase 93 (Automated Backup/Restore Verification Drill)
+Implemented:
+- Added automated DR verification script: `scripts/verify_backup_restore.sh`.
+- Script performs an end-to-end backup/restore drill with deterministic seed data:
+  1. creates temp SQLite + spool/checkpoint state
+  2. runs migrations
+  3. seeds user/device/raw_points/points/visits/watermark rows
+  4. runs `scripts/backup.sh`
+  5. verifies archive contents include sqlite snapshot, spool checkpoint/segment, manifest
+  6. verifies archive excludes unrelated junk file
+  7. verifies backup script failure path (missing sqlite source => nonzero)
+  8. runs `scripts/restore.sh` into clean target
+  9. runs `PRAGMA integrity_check;` and validates restored row counts
+  10. verifies restored spool/checkpoint files exist
+- Added `make` targets:
+  - `make backup`
+  - `make restore ARCHIVE=...`
+  - `make verify-backup-restore`
+- Added Go test wrapper to integrate the drill into `go test ./...` when bash/sqlite3 are available:
+  - `internal/tasks/backup_restore_verification_test.go` (`TestBackupRestoreVerificationScript`)
+- Updated README backup/restore section with verification instructions and checks.
+
+Architectural decisions:
+- Decision: Use a lightweight shell drill script plus Go wrapper test.
+  Reason: preserves existing script-based ops workflow, keeps CI/local checks repeatable, and avoids heavy new dependencies.
+
+Files changed:
+- `scripts/verify_backup_restore.sh`
+- `internal/tasks/backup_restore_verification_test.go`
+- `Makefile`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/tasks/backup_restore_verification_test.go`
+- `go test ./...`
+- `make verify-backup-restore`
+
+Pending:
+- Add checkpoint retry pressure fields to `/api/v1/status`.
+- Add store-backed scheduler telemetry integration assertions (mixed update/no-op runs).
+- Run manual runtime CSP header verification for map tile modes (`none`, `osm`, `custom`).
+
+Known issues:
+- In sandboxed environments with read-only `/tmp`, `make verify-backup-restore` requires running outside sandbox.
+
 ### 2026-04-28 20:02 CDT - Phase 90 (Visit Scheduler Restart/Watermark SQLite Integration)
 Implemented:
 - Added SQLite-backed integration test proving visit scheduler watermark/progress survives restart and remains incremental:
