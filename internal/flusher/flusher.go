@@ -202,6 +202,10 @@ func (f *Flusher) flushOneBatch() (bool, error) {
 
 	if maxSeq > 0 {
 		if _, err := f.checkpoint.AdvanceCheckpoint(maxSeq); err != nil {
+			// SQLite commit already succeeded, but checkpoint did not advance.
+			// Requeue the drained batch so normal runtime can retry checkpoint
+			// progression (and idempotent DB insert path) without restart.
+			_ = f.buffer.RequeueFront(batch)
 			return false, err
 		}
 		f.compactCommittedSegmentsBestEffort()

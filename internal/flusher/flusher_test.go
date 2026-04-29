@@ -56,6 +56,7 @@ type fakeStore struct {
 	mu      sync.Mutex
 	calls   int
 	errPlan []error
+	seenSeq map[uint64]struct{}
 }
 
 func (s *fakeStore) InsertSpoolBatch(records []ingest.SpoolRecord) (uint64, error) {
@@ -70,7 +71,11 @@ func (s *fakeStore) InsertSpoolBatch(records []ingest.SpoolRecord) (uint64, erro
 		}
 	}
 	var max uint64
+	if s.seenSeq == nil {
+		s.seenSeq = make(map[uint64]struct{})
+	}
 	for _, record := range records {
+		s.seenSeq[record.Seq] = struct{}{}
 		if record.Seq > max {
 			max = record.Seq
 		}
@@ -186,6 +191,12 @@ func TestFlusher_CheckpointFailureDoesNotCompact(t *testing.T) {
 	if checkpoint.compactCalls != 0 {
 		t.Fatalf("expected no compaction call, got %d", checkpoint.compactCalls)
 	}
+	if got := buf.Stats().TotalBufferedPoints; got != 2 {
+		t.Fatalf("expected drained batch requeued for checkpoint retry, got %d", got)
+	}
+	if store.calls != 1 {
+		t.Fatalf("expected sqlite insert called once before checkpoint failure, got %d", store.calls)
+	}
 }
 
 func TestFlusher_RetryBehavior(t *testing.T) {
@@ -216,6 +227,50 @@ func TestFlusher_RetryBehavior(t *testing.T) {
 	}
 }
 
+func TestFlusher_CheckpointFailureRetryEventuallyAdvancesWithoutDuplicateCommits(t *testing.T) {
+	buf := &fakeBuffer{queue: makeRecords(1, 2)}
+	store := &fakeStore{}
+	checkpoint := &fakeCheckpoint{advanceErr: errors.New("checkpoint write failed")}
+
+	f := New(store, checkpoint, buf, Config{FlushBatchSize: 10, FlushInterval: time.Minute})
+
+	if err := f.FlushNow(); err == nil {
+		t.Fatal("expected first flush to fail on checkpoint advancement")
+	}
+	if got := buf.Stats().TotalBufferedPoints; got != 2 {
+		t.Fatalf("expected batch retained for retry after checkpoint failure, got %d", got)
+	}
+	if len(checkpoint.advanced) != 0 {
+		t.Fatalf("expected no checkpoint advancement on first attempt, got %v", checkpoint.advanced)
+	}
+	if checkpoint.compactCalls != 0 {
+		t.Fatalf("expected no compaction on checkpoint failure, got %d", checkpoint.compactCalls)
+	}
+
+	checkpoint.mu.Lock()
+	checkpoint.advanceErr = nil
+	checkpoint.mu.Unlock()
+
+	if err := f.FlushNow(); err != nil {
+		t.Fatalf("expected second flush to succeed after checkpoint recovers, got %v", err)
+	}
+	if got := buf.Stats().TotalBufferedPoints; got != 0 {
+		t.Fatalf("expected empty buffer after successful retry, got %d", got)
+	}
+	if !slices.Equal(checkpoint.advanced, []uint64{2}) {
+		t.Fatalf("expected checkpoint advance [2], got %v", checkpoint.advanced)
+	}
+	if checkpoint.compactCalls != 1 {
+		t.Fatalf("expected one compaction call after successful checkpoint retry, got %d", checkpoint.compactCalls)
+	}
+	if len(store.seenSeq) != 2 {
+		t.Fatalf("expected idempotent unique commit set size=2, got %d", len(store.seenSeq))
+	}
+	if store.calls != 2 {
+		t.Fatalf("expected two sqlite insert attempts across retry, got %d", store.calls)
+	}
+}
+
 func TestFlusher_LastFlushResultRecorded(t *testing.T) {
 	buf := &fakeBuffer{queue: makeRecords(1)}
 	store := &fakeStore{}
@@ -235,6 +290,28 @@ func TestFlusher_LastFlushResultRecorded(t *testing.T) {
 	}
 	if result.AtUTC.IsZero() {
 		t.Fatalf("expected non-zero flush timestamp, got %+v", result)
+	}
+}
+
+func TestFlusher_LastFlushResultRecordsCheckpointFailure(t *testing.T) {
+	buf := &fakeBuffer{queue: makeRecords(1, 2)}
+	store := &fakeStore{}
+	checkpoint := &fakeCheckpoint{advanceErr: errors.New("checkpoint write failed")}
+
+	f := New(store, checkpoint, buf, Config{FlushBatchSize: 10, FlushInterval: time.Minute})
+	if err := f.FlushNow(); err == nil {
+		t.Fatal("expected checkpoint failure")
+	}
+
+	result, ok := f.LastFlushResult()
+	if !ok {
+		t.Fatal("expected last flush result to be recorded")
+	}
+	if result.Success {
+		t.Fatalf("expected failure result, got %+v", result)
+	}
+	if result.Error == "" || result.Error != "checkpoint write failed" {
+		t.Fatalf("expected checkpoint error in last flush result, got %+v", result)
 	}
 }
 

@@ -541,6 +541,7 @@ Notes:
 - replay is checkpoint-based, so already-committed records are normally skipped
 - if checkpoint is stale, replay may attempt already-committed rows; SQLite `ingest_hash` uniqueness prevents duplicate `raw_points` rows
 - after crash/power loss, recovery replays uncheckpointed spool data on next startup
+- if SQLite commit succeeds but checkpoint advancement fails, the drained batch is requeued to RAM front for normal-runtime retry; idempotent inserts prevent duplicate durable rows
 
 ## Backup and Restore (SQLite + Spool/Checkpoint)
 

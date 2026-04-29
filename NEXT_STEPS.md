@@ -1,16 +1,18 @@
 # Next Steps
 
 ## Current milestone
-Visit isolation hardening complete (stable user/device identity for visits + scheduler watermark)
+Flusher checkpoint-failure retry safety complete (requeue-on-checkpoint-failure with deterministic retry tests)
 
 ## Next 3 tasks
-1. Align points/recent/export filters to optional stable numeric device IDs (preserve compatibility where needed)
-2. Add authenticated status visibility for visit scheduler (last run/result/error) under protected `/api/v1/status`
+1. Add authenticated status visibility for checkpoint retry pressure and visit scheduler state under `/api/v1/status`
+2. Align points/recent/export filters to optional stable numeric device IDs (preserve compatibility where needed)
 3. Add authenticated browser smoke test for `/login` -> `/ui/admin/devices` and validate create/rotate/generate CSRF flow with numeric visit device IDs
 
 ## Commands
 - `go test ./...`
 - `go test ./internal/tasks -run TestVisitScheduler -count=1`
+- `go test ./internal/flusher`
+- `go test ./internal/tasks -run TestIntegration -count=1`
 - `go test ./internal/api -run 'Test(GenerateVisitsEndpoint_SameDeviceNameAcrossUsers_IsScopedByDeviceRowID|ListVisitsEndpoint_SameDeviceNameAcrossUsers_IsScopedBySessionUser)' -count=1`
 - `go test ./internal/store -run 'TestVisitIsolation_SameDeviceNameAcrossUsers' -count=1`
 - `go test ./internal/api`

@@ -4297,3 +4297,42 @@ Pending:
 Known issues:
 - In this shell environment, some commands require elevated execution because of sandbox restrictions.
 - On checkpoint advancement failure, current flusher behavior does not requeue already-drained batch; this pre-existing behavior should be addressed in a focused follow-up.
+
+### 2026-04-25 09:25 UTC - Phase 88 (Flusher Checkpoint-Failure Retry Safety)
+Implemented:
+- Fixed flusher checkpoint-failure behavior so drained RAM batches are not dropped after a successful SQLite commit.
+- `flushOneBatch()` now requeues drained batch to buffer front when `AdvanceCheckpoint(...)` fails.
+- Preserved existing durability/ordering rules:
+- SQLite insert failure => requeue + no checkpoint + no compaction
+- checkpoint advancement still occurs only after SQLite commit
+- compaction still occurs only after checkpoint success
+- Added/updated flusher tests:
+- checkpoint failure requeues drained batch and does not compact
+- retry after checkpoint failure eventually advances checkpoint
+- duplicate durable rows are not created on retry path (idempotent commit behavior modeled by unique seq tracking)
+- last flush result clearly records checkpoint failure
+- Updated README startup/recovery notes to document normal-runtime retry behavior after checkpoint failure.
+
+Architectural decisions:
+- Decision: Use requeue-on-checkpoint-failure (Option A) rather than adding a separate pending-checkpoint state machine.
+  Reason: smallest focused change, keeps single-writer architecture simple, and leverages existing idempotent SQLite insert semantics.
+
+Files changed:
+- `internal/flusher/flusher.go`
+- `internal/flusher/flusher_test.go`
+- `README.md`
+- `PROJECT_LOG.md`
+- `NEXT_STEPS.md`
+
+Commands:
+- `gofmt -w internal/flusher/flusher.go internal/flusher/flusher_test.go`
+- `go test ./internal/flusher`
+- `go test ./internal/tasks -run TestIntegration -count=1`
+- `go test ./...`
+
+Pending:
+- Add status surfacing for checkpoint-retry pressure (for example repeated checkpoint failures count or latest checkpoint failure timestamp) in authenticated `/api/v1/status`.
+- Keep prior follow-ups: points/recent/export device filter identity alignment and authenticated browser admin smoke coverage.
+
+Known issues:
+- In this shell environment, some commands require elevated execution because of sandbox restrictions.
