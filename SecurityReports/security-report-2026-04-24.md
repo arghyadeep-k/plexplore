@@ -1,8 +1,8 @@
-# Plexplore Security Report
+# Exploripi Security Report
 
 - Report date: 2026-04-24
 - Analyzer: Codex (GPT-5)
-- Repository: `/mnt/d/Code/plexplore`
+- Repository: `/mnt/d/Code/exploripi`
 - Assessment type: Codebase security and production-readiness review
 - Review mode: Static code review plus local test verification
 - Verification command: `go test ./...`
@@ -42,8 +42,8 @@ This conclusion assumes:
 
 Relevant files:
 
-- [cmd/server/main.go](/mnt/d/Code/plexplore/cmd/server/main.go)
-- [internal/config/config.go](/mnt/d/Code/plexplore/internal/config/config.go)
+- [cmd/server/main.go](/mnt/d/Code/exploripi/cmd/server/main.go)
+- [internal/config/config.go](/mnt/d/Code/exploripi/internal/config/config.go)
 
 ### Route registration and auth boundaries
 
@@ -55,13 +55,13 @@ Relevant files:
 
 Relevant files:
 
-- [internal/api/health.go](/mnt/d/Code/plexplore/internal/api/health.go)
-- [internal/api/ui.go](/mnt/d/Code/plexplore/internal/api/ui.go)
-- [internal/api/users.go](/mnt/d/Code/plexplore/internal/api/users.go)
-- [internal/api/devices.go](/mnt/d/Code/plexplore/internal/api/devices.go)
-- [internal/api/points.go](/mnt/d/Code/plexplore/internal/api/points.go)
-- [internal/api/exports.go](/mnt/d/Code/plexplore/internal/api/exports.go)
-- [internal/api/visits.go](/mnt/d/Code/plexplore/internal/api/visits.go)
+- [internal/api/health.go](/mnt/d/Code/exploripi/internal/api/health.go)
+- [internal/api/ui.go](/mnt/d/Code/exploripi/internal/api/ui.go)
+- [internal/api/users.go](/mnt/d/Code/exploripi/internal/api/users.go)
+- [internal/api/devices.go](/mnt/d/Code/exploripi/internal/api/devices.go)
+- [internal/api/points.go](/mnt/d/Code/exploripi/internal/api/points.go)
+- [internal/api/exports.go](/mnt/d/Code/exploripi/internal/api/exports.go)
+- [internal/api/visits.go](/mnt/d/Code/exploripi/internal/api/visits.go)
 
 ### Session, cookie, and CSRF controls
 
@@ -72,9 +72,9 @@ Relevant files:
 
 Relevant files:
 
-- [internal/api/login.go](/mnt/d/Code/plexplore/internal/api/login.go)
-- [internal/api/csrf.go](/mnt/d/Code/plexplore/internal/api/csrf.go)
-- [internal/api/cookie_security.go](/mnt/d/Code/plexplore/internal/api/cookie_security.go)
+- [internal/api/login.go](/mnt/d/Code/exploripi/internal/api/login.go)
+- [internal/api/csrf.go](/mnt/d/Code/exploripi/internal/api/csrf.go)
+- [internal/api/cookie_security.go](/mnt/d/Code/exploripi/internal/api/cookie_security.go)
 
 ### API key handling
 
@@ -86,9 +86,9 @@ Relevant files:
 
 Relevant files:
 
-- [internal/api/devices.go](/mnt/d/Code/plexplore/internal/api/devices.go)
-- [internal/store/devices.go](/mnt/d/Code/plexplore/internal/store/devices.go)
-- [internal/store/device_keys.go](/mnt/d/Code/plexplore/internal/store/device_keys.go)
+- [internal/api/devices.go](/mnt/d/Code/exploripi/internal/api/devices.go)
+- [internal/store/devices.go](/mnt/d/Code/exploripi/internal/store/devices.go)
+- [internal/store/device_keys.go](/mnt/d/Code/exploripi/internal/store/device_keys.go)
 
 ### Browser/UI hardening
 
@@ -98,9 +98,9 @@ Relevant files:
 
 Relevant files:
 
-- [internal/api/security_headers.go](/mnt/d/Code/plexplore/internal/api/security_headers.go)
-- [internal/api/ui_assets.go](/mnt/d/Code/plexplore/internal/api/ui_assets.go)
-- [internal/api/ui.go](/mnt/d/Code/plexplore/internal/api/ui.go)
+- [internal/api/security_headers.go](/mnt/d/Code/exploripi/internal/api/security_headers.go)
+- [internal/api/ui_assets.go](/mnt/d/Code/exploripi/internal/api/ui_assets.go)
+- [internal/api/ui.go](/mnt/d/Code/exploripi/internal/api/ui.go)
 
 ### Deployment defaults
 
@@ -111,9 +111,9 @@ Relevant files:
 
 Relevant files:
 
-- [Dockerfile](/mnt/d/Code/plexplore/Dockerfile)
-- [compose.yaml](/mnt/d/Code/plexplore/compose.yaml)
-- [deploy/systemd/plexplore.env.sample](/mnt/d/Code/plexplore/deploy/systemd/plexplore.env.sample)
+- [Dockerfile](/mnt/d/Code/exploripi/Dockerfile)
+- [compose.yaml](/mnt/d/Code/exploripi/compose.yaml)
+- [deploy/systemd/exploripi.env.sample](/mnt/d/Code/exploripi/deploy/systemd/exploripi.env.sample)
 
 ### Test verification
 
@@ -183,4 +183,4 @@ I do not currently see an impending critical security risk or active vulnerabili
 
 ## Summary
 
-Final assessment: the current Plexplore codebase is production-ready from an application security perspective, with remaining concerns limited to normal operational hardening and low-severity maintenance safeguards rather than active architectural weaknesses.
+Final assessment: the current Exploripi codebase is production-ready from an application security perspective, with remaining concerns limited to normal operational hardening and low-severity maintenance safeguards rather than active architectural weaknesses.

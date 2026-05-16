@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"plexplore/internal/api"
-	"plexplore/internal/store"
+	"exploripi/internal/api"
+	"exploripi/internal/store"
 )
 
 func migrationsDirForTests(t *testing.T) string {

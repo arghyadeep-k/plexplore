@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type fakeAdminUserStore struct {

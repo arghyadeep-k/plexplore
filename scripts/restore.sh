@@ -8,18 +8,18 @@ Usage:
 
 Options:
   --archive PATH        Backup archive (.tar or .tar.gz) from scripts/backup.sh
-  --sqlite-path PATH    SQLite DB restore path (default: APP_SQLITE_PATH or ./data/plexplore.db)
+  --sqlite-path PATH    SQLite DB restore path (default: APP_SQLITE_PATH or ./data/exploripi.db)
   --spool-dir PATH      Spool directory restore path (default: APP_SPOOL_DIR or ./data/spool)
   --force               Skip interactive confirmation
   -h, --help            Show this help
 
 Important:
-  Stop plexplore before restore. Restoring while service is running can corrupt state.
+  Stop exploripi before restore. Restoring while service is running can corrupt state.
 EOF
 }
 
 ARCHIVE_PATH=""
-SQLITE_PATH="${APP_SQLITE_PATH:-./data/plexplore.db}"
+SQLITE_PATH="${APP_SQLITE_PATH:-./data/exploripi.db}"
 SPOOL_DIR="${APP_SPOOL_DIR:-./data/spool}"
 FORCE=0
 
@@ -63,7 +63,7 @@ if [[ ! -f "$ARCHIVE_PATH" ]]; then
   exit 1
 fi
 
-echo "WARNING: Ensure plexplore service is stopped before restore."
+echo "WARNING: Ensure exploripi service is stopped before restore."
 echo "archive: $ARCHIVE_PATH"
 echo "target sqlite: $SQLITE_PATH"
 echo "target spool:  $SPOOL_DIR"

@@ -97,7 +97,7 @@ func Load() Config {
 	return Config{
 		DeploymentMode:                     deploymentMode,
 		HTTPListenAddr:                     getEnv("APP_HTTP_LISTEN_ADDR", "127.0.0.1:8080"),
-		SQLitePath:                         getEnv("APP_SQLITE_PATH", "./data/plexplore.db"),
+		SQLitePath:                         getEnv("APP_SQLITE_PATH", "./data/exploripi.db"),
 		SpoolDir:                           getEnv("APP_SPOOL_DIR", "./data/spool"),
 		SpoolSegmentMaxBytes:               getEnvInt("APP_SPOOL_SEGMENT_MAX_BYTES", 4*1024*1024),
 		SpoolFSyncMode:                     getFsyncMode("APP_SPOOL_FSYNC_MODE", "balanced"),
@@ -124,7 +124,7 @@ func Load() Config {
 		ReverseGeocodeEnabled:              getEnvBool("APP_REVERSE_GEOCODE_ENABLED", false),
 		ReverseGeocodeProvider:             strings.ToLower(getEnv("APP_REVERSE_GEOCODE_PROVIDER", "nominatim")),
 		ReverseGeocodeNominatimURL:         getEnv("APP_REVERSE_GEOCODE_NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse"),
-		ReverseGeocodeUserAgent:            getEnv("APP_REVERSE_GEOCODE_USER_AGENT", "plexplore/1.0 (+self-hosted)"),
+		ReverseGeocodeUserAgent:            getEnv("APP_REVERSE_GEOCODE_USER_AGENT", "exploripi/1.0 (+self-hosted)"),
 		ReverseGeocodeTimeout:              getEnvDuration("APP_REVERSE_GEOCODE_TIMEOUT", 2*time.Second),
 		ReverseGeocodeCacheDecimals:        getEnvInt("APP_REVERSE_GEOCODE_CACHE_DECIMALS", 4),
 		ReverseGeocodeMaxLookupsPerRequest: getEnvInt("APP_REVERSE_GEOCODE_MAX_LOOKUPS_PER_REQUEST", 3),

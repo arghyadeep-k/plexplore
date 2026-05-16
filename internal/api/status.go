@@ -156,6 +156,6 @@ func statusHandler(deps Dependencies) http.HandlerFunc {
 func publicStatusHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, publicStatusResponse{
 		ServiceHealth: "ok",
-		Service:       "plexplore",
+		Service:       "exploripi",
 	})
 }

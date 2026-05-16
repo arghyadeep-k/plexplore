@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type fakeSessionStore struct {

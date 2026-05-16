@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"plexplore/internal/api"
-	"plexplore/internal/store"
+	"exploripi/internal/api"
+	"exploripi/internal/store"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func run(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
-	dbPath := fs.String("db", getenv("APP_SQLITE_PATH", "./data/plexplore.db"), "sqlite database path")
+	dbPath := fs.String("db", getenv("APP_SQLITE_PATH", "./data/exploripi.db"), "sqlite database path")
 	migrationsDir := fs.String("migrations", getenv("APP_MIGRATIONS_DIR", "./migrations"), "migrations directory")
 	createAdmin := fs.Bool("create-admin", false, "bootstrap admin user")
 	email := fs.String("email", "", "admin email for --create-admin")

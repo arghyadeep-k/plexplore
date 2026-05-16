@@ -12,7 +12,7 @@ const statusPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Status</title>
+  <title>Exploripi Status</title>
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <link rel="stylesheet" href="/ui/assets/app/app.css">
   <link rel="stylesheet" href="/ui/assets/app/status.css">
@@ -22,7 +22,7 @@ const statusPageHTML = `<!doctype html>
 <body>
   <div class="wrap status-wrap">
     <div class="topbar">
-      <h1>Plexplore Status</h1>
+      <h1>Exploripi Status</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="status_to_map_link" class="nav-link" href="/ui/map">Map</a>
@@ -108,7 +108,7 @@ const mapPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Map</title>
+  <title>Exploripi Map</title>
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <link rel="stylesheet" href="/ui/assets/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/ui/assets/app/app.css">
@@ -120,7 +120,7 @@ const mapPageHTML = `<!doctype html>
 <body>
   <div class="wrap map-wrap">
     <div class="topbar">
-      <h1>Plexplore Map</h1>
+      <h1>Exploripi Map</h1>
       <div class="top-actions">
         <span id="session_user" class="session-user">Signed in: __USER_EMAIL__</span>
         <a id="map_to_status_link" class="nav-link" href="/ui/status">Status</a>
@@ -190,7 +190,7 @@ const adminUsersPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Users</title>
+  <title>Exploripi Users</title>
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <link rel="stylesheet" href="/ui/assets/app/app.css">
   <link rel="stylesheet" href="/ui/assets/app/users.css">
@@ -245,7 +245,7 @@ const adminDevicesPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Devices</title>
+  <title>Exploripi Devices</title>
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <link rel="stylesheet" href="/ui/assets/app/app.css">
   <link rel="stylesheet" href="/ui/assets/app/devices.css">

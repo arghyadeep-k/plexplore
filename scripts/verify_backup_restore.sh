@@ -32,9 +32,9 @@ tmp_root="$(mktemp -d)"
 src_dir="$tmp_root/source"
 restore_dir="$tmp_root/restore"
 backups_dir="$tmp_root/backups"
-src_db="$src_dir/plexplore.db"
+src_db="$src_dir/exploripi.db"
 src_spool="$src_dir/spool"
-restore_db="$restore_dir/plexplore-restored.db"
+restore_db="$restore_dir/exploripi-restored.db"
 restore_spool="$restore_dir/spool"
 
 cleanup() {
@@ -92,7 +92,7 @@ echo "==> running backup script"
   --spool-dir "$src_spool" \
   --output-dir "$backups_dir"
 
-archive_path="$(ls -1 "$backups_dir"/plexplore-backup-*.tar* | tail -n 1)"
+archive_path="$(ls -1 "$backups_dir"/exploripi-backup-*.tar* | tail -n 1)"
 if [[ -z "$archive_path" || ! -f "$archive_path" ]]; then
   echo "backup archive not found in $backups_dir" >&2
   exit 1
@@ -101,7 +101,7 @@ echo "backup archive: $archive_path"
 
 echo "==> verifying archive contents"
 archive_listing="$(tar -tf "$archive_path")"
-echo "$archive_listing" | grep -qE '^\./sqlite/plexplore\.db$' || { echo "archive missing sqlite snapshot" >&2; exit 1; }
+echo "$archive_listing" | grep -qE '^\./sqlite/exploripi\.db$' || { echo "archive missing sqlite snapshot" >&2; exit 1; }
 echo "$archive_listing" | grep -qE '^\./spool/checkpoint\.json$' || { echo "archive missing spool checkpoint" >&2; exit 1; }
 echo "$archive_listing" | grep -qE '^\./spool/0000000000000001\.seg$' || { echo "archive missing spool segment file" >&2; exit 1; }
 echo "$archive_listing" | grep -qE '^\./MANIFEST\.txt$' || { echo "archive missing manifest" >&2; exit 1; }

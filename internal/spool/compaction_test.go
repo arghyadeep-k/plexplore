@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func listSegmentStarts(t *testing.T, dir string) []uint64 {

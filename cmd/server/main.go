@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
-	"plexplore/internal/api"
-	"plexplore/internal/buffer"
-	"plexplore/internal/config"
-	"plexplore/internal/flusher"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
-	"plexplore/internal/tasks"
-	"plexplore/internal/visits"
+	"exploripi/internal/api"
+	"exploripi/internal/buffer"
+	"exploripi/internal/config"
+	"exploripi/internal/flusher"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
+	"exploripi/internal/tasks"
+	"exploripi/internal/visits"
 )
 
 func main() {

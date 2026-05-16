@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
-const sessionCookieName = "plexplore_session"
+const sessionCookieName = "exploripi_session"
 
 const authenticatedUserKey contextKey = "authenticated_user"
 

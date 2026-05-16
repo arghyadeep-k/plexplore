@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
-	"plexplore/internal/visits"
+	"exploripi/internal/ingest"
+	"exploripi/internal/visits"
 )
 
 func TestVisitSchedulerRestart_PersistsWatermarkAndAvoidsDuplicateVisits(t *testing.T) {

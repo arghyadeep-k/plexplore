@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/api"
-	"plexplore/internal/store"
+	"exploripi/internal/api"
+	"exploripi/internal/store"
 )
 
 type authIntegrationEnv struct {
@@ -251,7 +251,7 @@ func TestBrowserAdminWorkflowSmoke(t *testing.T) {
 	adminSession := env.login("admin@example.com", adminPassword)
 
 	adminUIReq := httptest.NewRequest(http.MethodGet, "/ui/admin/devices", nil)
-	adminUIReq.AddCookie(&http.Cookie{Name: "plexplore_session", Value: adminSession.sessionToken})
+	adminUIReq.AddCookie(&http.Cookie{Name: "exploripi_session", Value: adminSession.sessionToken})
 	adminUIRec := httptest.NewRecorder()
 	env.mux.ServeHTTP(adminUIRec, adminUIReq)
 	if adminUIRec.Code != http.StatusOK {
@@ -407,7 +407,7 @@ func (e *authIntegrationEnv) login(email, password string) webSession {
 	}
 	var csrfToken string
 	for _, c := range csrfRec.Result().Cookies() {
-		if c.Name == "plexplore_csrf" {
+		if c.Name == "exploripi_csrf" {
 			csrfToken = c.Value
 			break
 		}
@@ -422,21 +422,21 @@ func (e *authIntegrationEnv) login(email, password string) webSession {
 	form.Set("csrf_token", csrfToken)
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "plexplore_csrf", Value: csrfToken})
+	req.AddCookie(&http.Cookie{Name: "exploripi_csrf", Value: csrfToken})
 	rec := httptest.NewRecorder()
 	e.mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusSeeOther {
 		e.t.Fatalf("login %s expected 303, got %d body=%s", email, rec.Code, rec.Body.String())
 	}
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == "plexplore_session" && c.Value != "" {
+		if c.Name == "exploripi_session" && c.Value != "" {
 			return webSession{
 				sessionToken: c.Value,
 				csrfToken:    csrfToken,
 			}
 		}
 	}
-	e.t.Fatalf("login %s did not set plexplore_session cookie", email)
+	e.t.Fatalf("login %s did not set exploripi_session cookie", email)
 	return webSession{}
 }
 
@@ -495,7 +495,7 @@ func (e *authIntegrationEnv) postJSON(path, apiKey, body string, session webSess
 		req.Header.Set("X-API-Key", apiKey)
 	}
 	if session.sessionToken != "" {
-		req.AddCookie(&http.Cookie{Name: "plexplore_session", Value: session.sessionToken})
+		req.AddCookie(&http.Cookie{Name: "exploripi_session", Value: session.sessionToken})
 	}
 	rec := httptest.NewRecorder()
 	e.mux.ServeHTTP(rec, req)
@@ -512,10 +512,10 @@ func (e *authIntegrationEnv) postJSONWithCSRF(path, apiKey, body string, session
 		req.Header.Set("X-API-Key", apiKey)
 	}
 	if session.sessionToken != "" {
-		req.AddCookie(&http.Cookie{Name: "plexplore_session", Value: session.sessionToken})
+		req.AddCookie(&http.Cookie{Name: "exploripi_session", Value: session.sessionToken})
 	}
 	if session.csrfToken != "" {
-		req.AddCookie(&http.Cookie{Name: "plexplore_csrf", Value: session.csrfToken})
+		req.AddCookie(&http.Cookie{Name: "exploripi_csrf", Value: session.csrfToken})
 	}
 	rec := httptest.NewRecorder()
 	e.mux.ServeHTTP(rec, req)
@@ -527,7 +527,7 @@ func (e *authIntegrationEnv) getJSON(path string, session webSession) *httptest.
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	if session.sessionToken != "" {
-		req.AddCookie(&http.Cookie{Name: "plexplore_session", Value: session.sessionToken})
+		req.AddCookie(&http.Cookie{Name: "exploripi_session", Value: session.sessionToken})
 	}
 	rec := httptest.NewRecorder()
 	e.mux.ServeHTTP(rec, req)

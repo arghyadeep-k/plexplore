@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func loadMigrationSQL(t *testing.T) string {

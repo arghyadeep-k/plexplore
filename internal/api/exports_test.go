@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 func TestGeoJSONExport_ValidStructure(t *testing.T) {
@@ -40,7 +40,7 @@ func TestGeoJSONExport_ValidStructure(t *testing.T) {
 	if !strings.Contains(rec.Header().Get("Content-Type"), "application/geo+json") {
 		t.Fatalf("expected geojson content type, got %q", rec.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.geojson") {
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "exploripi-export.geojson") {
 		t.Fatalf("expected download filename header, got %q", rec.Header().Get("Content-Disposition"))
 	}
 	if pointStore.lastExportFilter.DeviceRowID == nil || *pointStore.lastExportFilter.DeviceRowID != 5 {
@@ -171,7 +171,7 @@ func TestGPXExport_ValidStructureAndContent(t *testing.T) {
 	if pointStore.streamCallCount != 2 {
 		t.Fatalf("expected preflight+stream calls (2), got %d", pointStore.streamCallCount)
 	}
-	if !strings.Contains(rec.Header().Get("Content-Disposition"), "plexplore-export.gpx") {
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "exploripi-export.gpx") {
 		t.Fatalf("expected GPX download filename header, got %q", rec.Header().Get("Content-Disposition"))
 	}
 

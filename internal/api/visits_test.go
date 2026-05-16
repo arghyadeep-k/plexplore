@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/store"
-	"plexplore/internal/visits"
+	"exploripi/internal/store"
+	"exploripi/internal/visits"
 )
 
 type fakeVisitStore struct {

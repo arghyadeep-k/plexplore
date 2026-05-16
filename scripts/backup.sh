@@ -7,10 +7,10 @@ Usage:
   scripts/backup.sh [options]
 
 Options:
-  --sqlite-path PATH    SQLite DB path (default: APP_SQLITE_PATH or ./data/plexplore.db)
+  --sqlite-path PATH    SQLite DB path (default: APP_SQLITE_PATH or ./data/exploripi.db)
   --spool-dir PATH      Spool directory (default: APP_SPOOL_DIR or ./data/spool)
   --output-dir PATH     Backup output directory (default: ./backups)
-  --name-prefix VALUE   Archive prefix (default: plexplore-backup)
+  --name-prefix VALUE   Archive prefix (default: exploripi-backup)
   --offline             Use offline file-copy mode instead of sqlite .backup
   --no-compress         Write .tar instead of .tar.gz
   -h, --help            Show this help
@@ -21,10 +21,10 @@ Notes:
 EOF
 }
 
-SQLITE_PATH="${APP_SQLITE_PATH:-./data/plexplore.db}"
+SQLITE_PATH="${APP_SQLITE_PATH:-./data/exploripi.db}"
 SPOOL_DIR="${APP_SPOOL_DIR:-./data/spool}"
 OUTPUT_DIR="./backups"
-NAME_PREFIX="plexplore-backup"
+NAME_PREFIX="exploripi-backup"
 OFFLINE_MODE=0
 COMPRESS=1
 

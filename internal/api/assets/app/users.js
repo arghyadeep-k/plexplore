@@ -1,5 +1,5 @@
 (function () {
-  const csrfToken = window.PlexploreUI.csrfTokenFromMeta();
+  const csrfToken = window.ExploripiUI.csrfTokenFromMeta();
 
   function loadUsers() {
     const body = document.getElementById("users_body");
@@ -22,11 +22,11 @@
               "<tr><td>" +
               u.id +
               "</td><td>" +
-              window.PlexploreUI.escapeHTML(u.email || "") +
+              window.ExploripiUI.escapeHTML(u.email || "") +
               "</td><td>" +
               (u.is_admin ? "yes" : "no") +
               "</td><td>" +
-              window.PlexploreUI.escapeHTML(u.created_at || "") +
+              window.ExploripiUI.escapeHTML(u.created_at || "") +
               "</td></tr>"
             );
           })
@@ -78,12 +78,12 @@
     });
   });
 
-  window.PlexploreUI.initThemeToggle();
+  window.ExploripiUI.initThemeToggle();
   loadUsers().catch(function (err) {
     const body = document.getElementById("users_body");
     body.innerHTML =
       "<tr><td colspan='4' class='muted'>Load failed: " +
-      window.PlexploreUI.escapeHTML(err.message) +
+      window.ExploripiUI.escapeHTML(err.message) +
       "</td></tr>";
   });
 })();

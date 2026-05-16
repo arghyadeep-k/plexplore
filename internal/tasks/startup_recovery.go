@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/flusher"
-	"plexplore/internal/spool"
+	"exploripi/internal/buffer"
+	"exploripi/internal/flusher"
+	"exploripi/internal/spool"
 )
 
 // RecoveryConfig controls startup replay behavior.

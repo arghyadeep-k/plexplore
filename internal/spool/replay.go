@@ -8,7 +8,7 @@ import (
 	"os"
 	"slices"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func (m *FileSpoolManager) ReadCheckpoint() (Checkpoint, error) {

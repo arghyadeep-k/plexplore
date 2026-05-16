@@ -35,9 +35,9 @@
           "<tr><td>" +
           d.id +
           "</td><td>" +
-          window.PlexploreUI.escapeHTML(d.name) +
+          window.ExploripiUI.escapeHTML(d.name) +
           "</td><td>" +
-          window.PlexploreUI.escapeHTML(d.source_type) +
+          window.ExploripiUI.escapeHTML(d.source_type) +
           "</td><td>" +
           d.user_id +
           "</td></tr>"
@@ -53,7 +53,7 @@
     }
     body.innerHTML =
       "<tr><td colspan='4' class='muted'>Unavailable: " +
-      window.PlexploreUI.escapeHTML(message) +
+      window.ExploripiUI.escapeHTML(message) +
       "</td></tr>";
   }
 
@@ -79,9 +79,9 @@
           "<tr><td>" +
           p.seq +
           "</td><td>" +
-          window.PlexploreUI.escapeHTML(p.device_id || "") +
+          window.ExploripiUI.escapeHTML(p.device_id || "") +
           "</td><td>" +
-          window.PlexploreUI.escapeHTML(p.timestamp_utc || "") +
+          window.ExploripiUI.escapeHTML(p.timestamp_utc || "") +
           "</td><td>" +
           formatCoord(p.lat) +
           "</td><td>" +
@@ -99,7 +99,7 @@
     }
     body.innerHTML =
       "<tr><td colspan='5' class='muted'>Unavailable: " +
-      window.PlexploreUI.escapeHTML(message) +
+      window.ExploripiUI.escapeHTML(message) +
       "</td></tr>";
   }
 
@@ -188,7 +188,7 @@
       });
   }
 
-  window.PlexploreUI.initThemeToggle();
+  window.ExploripiUI.initThemeToggle();
   refresh();
   setInterval(refresh, 5000);
 })();

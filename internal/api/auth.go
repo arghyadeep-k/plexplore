@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type contextKey string

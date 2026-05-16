@@ -1,21 +1,21 @@
 [Unit]
-Description=Plexplore Tracker Service
+Description=Exploripi Tracker Service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=plexplore
-Group=plexplore
-WorkingDirectory=/opt/plexplore
-EnvironmentFile=/etc/plexplore/plexplore.env
-ExecStart=/opt/plexplore/plexplore-server
+User=exploripi
+Group=exploripi
+WorkingDirectory=/opt/exploripi
+EnvironmentFile=/etc/exploripi/exploripi.env
+ExecStart=/opt/exploripi/exploripi-server
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/plexplore
+ReadWritePaths=/var/lib/exploripi
 LimitNOFILE=1024
 
 [Install]

@@ -1,5 +1,5 @@
 (function () {
-  const themeKey = "plexplore.theme";
+  const themeKey = "exploripi.theme";
 
   function preferredTheme() {
     const stored = localStorage.getItem(themeKey);
@@ -50,7 +50,7 @@
     return (meta.getAttribute("content") || "").trim();
   }
 
-  window.PlexploreUI = {
+  window.ExploripiUI = {
     escapeHTML: escapeHTML,
     initThemeToggle: initThemeToggle,
     csrfTokenFromMeta: csrfTokenFromMeta,

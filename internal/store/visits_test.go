@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
-	"plexplore/internal/visits"
+	"exploripi/internal/ingest"
+	"exploripi/internal/visits"
 )
 
 func visitRecord(seq uint64, deviceID, hash string, ts time.Time, lat, lon float64) ingest.SpoolRecord {

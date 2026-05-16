@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 const (
@@ -100,14 +100,14 @@ func geoJSONExportHandler(pointStore PointStore, deviceStore DeviceStore) http.H
 		}
 		if !hasRows {
 			w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
-			w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.geojson"`)
+			w.Header().Set("Content-Disposition", `attachment; filename="exploripi-export.geojson"`)
 			writeJSON(w, http.StatusOK, geoJSONFeatureCollection{Type: "FeatureCollection", Features: []geoJSONFeature{}})
 			return
 		}
 
 		w.Header().Set("Trailer", "X-Export-Error")
 		w.Header().Set("Content-Type", "application/geo+json; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.geojson"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="exploripi-export.geojson"`)
 		w.WriteHeader(http.StatusOK)
 
 		bw := bufio.NewWriterSize(w, 16*1024)
@@ -272,20 +272,20 @@ func gpxExportHandler(pointStore PointStore, deviceStore DeviceStore) http.Handl
 		}
 		if !hasRows {
 			w.Header().Set("Content-Type", "application/gpx+xml; charset=utf-8")
-			w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.gpx"`)
+			w.Header().Set("Content-Disposition", `attachment; filename="exploripi-export.gpx"`)
 			writeEmptyGPX(w)
 			return
 		}
 
 		w.Header().Set("Trailer", "X-Export-Error")
 		w.Header().Set("Content-Type", "application/gpx+xml; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="plexplore-export.gpx"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="exploripi-export.gpx"`)
 		w.WriteHeader(http.StatusOK)
 
 		bw := bufio.NewWriterSize(w, 16*1024)
 		_, _ = bw.WriteString(xml.Header)
-		_, _ = bw.WriteString(`<gpx version="1.1" creator="plexplore" xmlns="http://www.topografix.com/GPX/1/1">`)
-		_, _ = bw.WriteString(`<trk><name>plexplore-export</name><trkseg>`)
+		_, _ = bw.WriteString(`<gpx version="1.1" creator="exploripi" xmlns="http://www.topografix.com/GPX/1/1">`)
+		_, _ = bw.WriteString(`<trk><name>exploripi-export</name><trkseg>`)
 
 		writeTrackPoint := func(point store.RecentPoint) error {
 			_, writeErr := fmt.Fprintf(
@@ -338,10 +338,10 @@ func probeExportFirstPoint(ctx context.Context, pointStore PointStore, filter st
 func writeEmptyGPX(w http.ResponseWriter) {
 	writeGPXDoc(w, gpxDocument{
 		Version: "1.1",
-		Creator: "plexplore",
+		Creator: "exploripi",
 		XMLNS:   "http://www.topografix.com/GPX/1/1",
 		Track: gpxTrack{
-			Name: "plexplore-export",
+			Name: "exploripi-export",
 		},
 	})
 }

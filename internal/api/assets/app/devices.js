@@ -1,5 +1,5 @@
 (function () {
-  const csrfToken = window.PlexploreUI.csrfTokenFromMeta();
+  const csrfToken = window.ExploripiUI.csrfTokenFromMeta();
   const ownerByID = {};
   let devicesCache = [];
 
@@ -34,7 +34,7 @@
     if (!owner) {
       return "#" + String(userID);
     }
-    const email = window.PlexploreUI.escapeHTML(owner.email || "");
+    const email = window.ExploripiUI.escapeHTML(owner.email || "");
     return "#" + String(userID) + " (" + email + ")";
   }
 
@@ -55,19 +55,19 @@
           String(d.id || "") +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(d.name || "") +
+          window.ExploripiUI.escapeHTML(d.name || "") +
           "</td>" +
           "<td>" +
           ownerLabel(d.user_id) +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(d.created_at || "") +
+          window.ExploripiUI.escapeHTML(d.created_at || "") +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(d.updated_at || "") +
+          window.ExploripiUI.escapeHTML(d.updated_at || "") +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(d.api_key_preview || "") +
+          window.ExploripiUI.escapeHTML(d.api_key_preview || "") +
           "</td>" +
           "<td><button type='button' class='rotate-btn' data-device-id='" +
           String(d.id || "") +
@@ -92,7 +92,7 @@
         "<option value='" +
           String(d.id) +
           "'>" +
-          window.PlexploreUI.escapeHTML(d.name || "") +
+          window.ExploripiUI.escapeHTML(d.name || "") +
           "</option>",
       );
     }
@@ -118,7 +118,7 @@
             "<option value='" +
             String(u.id) +
             "'>" +
-            window.PlexploreUI.escapeHTML(u.email || ("user-" + String(u.id))) +
+            window.ExploripiUI.escapeHTML(u.email || ("user-" + String(u.id))) +
             (u.is_admin ? " (admin)" : "") +
             "</option>"
           );
@@ -348,7 +348,7 @@
     }
   }
 
-  window.PlexploreUI.initThemeToggle();
+  window.ExploripiUI.initThemeToggle();
   bindEvents();
   loadUsers()
     .then(loadDevices)

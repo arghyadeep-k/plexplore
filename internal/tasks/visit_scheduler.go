@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"plexplore/internal/store"
-	"plexplore/internal/visits"
+	"exploripi/internal/store"
+	"exploripi/internal/visits"
 )
 
 type VisitSchedulerStore interface {

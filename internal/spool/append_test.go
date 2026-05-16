@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func readAllSegmentRecords(path string) ([]ingest.SpoolRecord, error) {

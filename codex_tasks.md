@@ -47,7 +47,7 @@ Validation after Task 1:
 - Run: go test ./internal/store ./...
 - Run migrations on a fresh DB: make migrate
 - Validate schema manually with sqlite3:
-  - sqlite3 ./data/plexplore.db ".schema users"
+  - sqlite3 ./data/exploripi.db ".schema users"
 - Confirm users table contains email, password_hash, is_admin, created_at, updated_at
 
 
@@ -99,7 +99,7 @@ Validation after Task 3:
 - Run admin creation command, for example:
   - go run ./cmd/createadmin --email admin@example.com --password 'testpass'
 - Verify in DB:
-  - sqlite3 ./data/plexplore.db "SELECT id,email,is_admin FROM users;"
+  - sqlite3 ./data/exploripi.db "SELECT id,email,is_admin FROM users;"
 - Confirm admin row exists and password is stored hashed, not plaintext
 
 
@@ -127,7 +127,7 @@ Requirements:
 Validation after Task 4:
 - Run: go test ./...
 - Confirm new session table exists if implemented in DB:
-  - sqlite3 ./data/plexplore.db ".tables"
+  - sqlite3 ./data/exploripi.db ".tables"
 - Confirm middleware tests pass for valid and invalid session cookies
 
 
@@ -219,7 +219,7 @@ Validation after Task 7:
   - login as admin
   - create a second user
   - verify DB rows:
-    - sqlite3 ./data/plexplore.db "SELECT id,email,is_admin FROM users;"
+    - sqlite3 ./data/exploripi.db "SELECT id,email,is_admin FROM users;"
   - verify user list response does not expose password_hash
 
 
@@ -272,7 +272,7 @@ Validation after Task 9:
 - Manual test:
   - create devices as different users
   - confirm device rows have correct user_id in DB:
-    - sqlite3 ./data/plexplore.db "SELECT id,user_id,name FROM devices;"
+    - sqlite3 ./data/exploripi.db "SELECT id,user_id,name FROM devices;"
 
 
 Task 10: Scope recent points endpoint by signed-in user

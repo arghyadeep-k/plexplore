@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type recentPointResponse struct {

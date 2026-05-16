@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func testPoint(seqOffset int) ingest.CanonicalPoint {

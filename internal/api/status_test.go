@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/flusher"
-	"plexplore/internal/ingest"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
+	"exploripi/internal/buffer"
+	"exploripi/internal/flusher"
+	"exploripi/internal/ingest"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
 )
 
 type fakeStatusBuffer struct {
@@ -103,8 +103,8 @@ func TestStatusEndpoint_ReturnsOperationalState(t *testing.T) {
 				LagSeconds:       12,
 			},
 		},
-		SpoolDir:   "/tmp/plexplore-spool",
-		SQLitePath: "/tmp/plexplore.db",
+		SpoolDir:   "/tmp/exploripi-spool",
+		SQLitePath: "/tmp/exploripi.db",
 		UserStore:  &fakeUserStore{users: map[int64]store.User{1: {ID: 1, Email: "u@example.com"}}},
 		SessionStore: &fakeSessionStore{
 			sessionByToken: map[string]store.Session{
@@ -135,7 +135,7 @@ func TestStatusEndpoint_ReturnsOperationalState(t *testing.T) {
 	if resp.ServiceHealth != "ok" {
 		t.Fatalf("expected service health ok, got %q", resp.ServiceHealth)
 	}
-	if resp.SpoolDirPath != "/tmp/plexplore-spool" || resp.SQLiteDBPath != "/tmp/plexplore.db" {
+	if resp.SpoolDirPath != "/tmp/exploripi-spool" || resp.SQLiteDBPath != "/tmp/exploripi.db" {
 		t.Fatalf("unexpected path fields: %+v", resp)
 	}
 	if resp.LastFlush == nil || !resp.LastFlush.Success {

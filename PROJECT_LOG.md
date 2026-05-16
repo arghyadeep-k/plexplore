@@ -915,8 +915,8 @@ Commands:
 - `curl -sS -w '\nHTTP_STATUS:%{http_code}\n' -X POST http://127.0.0.1:8080/api/v1/owntracks -H 'Content-Type: application/json' -d '{"_type":"location","lat":41.0,"lon":-87.0,"tst":1713777600}'`
 - `curl -sS -w '\nHTTP_STATUS:%{http_code}\n' -X POST http://127.0.0.1:8080/api/v1/owntracks -H 'Content-Type: application/json' -H 'X-API-Key: dev-key-1' -d '{"_type":"location","lat":41.0,"lon":-87.0,"tst":1713777600}'`
 - `curl -sS -w '\nHTTP_STATUS:%{http_code}\n' -X POST http://127.0.0.1:8080/api/v1/overland/batches -H 'Content-Type: application/json' -H 'X-API-Key: dev-key-1' -d '{"device_id":"phone-main","locations":[{"coordinates":[-87.001,41.001],"timestamp":"2026-04-22T12:00:00Z","horizontal_accuracy":7.5}]}'`
-- `sqlite3 ./data/plexplore.db "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM raw_points; SELECT COUNT(*) FROM points;"`
-- `sqlite3 ./data/plexplore.db "SELECT seq, source_type, timestamp_utc, lat, lon FROM raw_points ORDER BY seq;"`
+- `sqlite3 ./data/exploripi.db "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM raw_points; SELECT COUNT(*) FROM points;"`
+- `sqlite3 ./data/exploripi.db "SELECT seq, source_type, timestamp_utc, lat, lon FROM raw_points ORDER BY seq;"`
 
 Pending:
 - Implement explicit ingest size-pressure policy to call flusher trigger under high buffer pressure.
@@ -1399,7 +1399,7 @@ Known issues:
 ### 2026-04-22 14:21 - Phase 38 (Task 6 Raspberry Pi Deployment Prep)
 Implemented:
 - Added sample systemd unit for service deployment.
-- Added sample environment file with low-overhead defaults and persistent `/var/lib/plexplore` paths.
+- Added sample environment file with low-overhead defaults and persistent `/var/lib/exploripi` paths.
 - Added minimal install/setup script to:
 - create service user and directories
 - install binary/service/env files
@@ -1415,8 +1415,8 @@ Architectural decisions:
   Reason: Keep Raspberry Pi operations simple, transparent, and low-overhead.
 
 Files changed:
-- `deploy/systemd/plexplore.service`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.service`
+- `deploy/systemd/exploripi.env.sample`
 - `scripts/install_systemd.sh`
 - `README.md`
 - `PROJECT_LOG.md`
@@ -1437,7 +1437,7 @@ Known issues:
 ### 2026-04-22 14:27 - Phase 39 (Task 7 Lightweight Dockerization)
 Implemented:
 - Added lightweight multi-stage Docker build:
-- build stage compiles `plexplore-server` and `plexplore-migrate`
+- build stage compiles `exploripi-server` and `exploripi-migrate`
 - runtime stage uses Alpine with `sqlite` CLI for migration runner compatibility
 - Added container entrypoint script to run migrations then start server.
 - Added `.dockerignore` to keep build context small and avoid including runtime state/log artifacts.
@@ -1468,8 +1468,8 @@ Commands:
 - `go test ./...`
 - `docker --version`
 - `docker compose config`
-- `docker build -t plexplore:dev .`
-- `docker run --rm -p 18080:8080 -v /mnt/d/Code/plexplore/data:/data plexplore:dev`
+- `docker build -t exploripi:dev .`
+- `docker run --rm -p 18080:8080 -v /mnt/d/Code/exploripi/data:/data exploripi:dev`
 - `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/status`
 - `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/api/v1/exports/geojson`
 - `curl -sS -w "\n%{http_code}\n" http://127.0.0.1:18080/api/v1/exports/gpx`
@@ -1501,7 +1501,7 @@ Implemented:
 - point-threshold crossing triggers flush
 - byte-threshold crossing triggers flush
 - Updated deployment templates with new env knobs:
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `compose.yaml`
 - Updated README with policy summary and new config documentation.
 
@@ -1515,7 +1515,7 @@ Files changed:
 - `internal/api/ingest.go`
 - `internal/api/ingest_test.go`
 - `cmd/server/main.go`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `compose.yaml`
 - `README.md`
 - `PROJECT_LOG.md`
@@ -2031,7 +2031,7 @@ Implemented:
 - Added top-of-page accessible theme toggle button (`id="theme_toggle"`) with sun/moon icon behavior.
 - Theme behavior:
 - toggles light/dark immediately without page reload
-- persists preference in `localStorage` (`plexplore.theme`)
+- persists preference in `localStorage` (`exploripi.theme`)
 - applies saved preference on page load
 - falls back to system preference (`prefers-color-scheme: dark`) when no saved preference exists
 - Updated CSS tokens to support dark mode across existing UI components:
@@ -2226,7 +2226,7 @@ Known issues:
 
 ### 2026-04-24 05:16 UTC - Phase 79 (Baseline Security Headers + Self-Hosted Leaflet Assets)
 Implemented:
-- Switched map UI from CDN Leaflet to self-hosted local assets served by Plexplore.
+- Switched map UI from CDN Leaflet to self-hosted local assets served by Exploripi.
 - Vendored Leaflet assets into repo:
 - `internal/api/assets/leaflet/leaflet.js`
 - `internal/api/assets/leaflet/leaflet.css`
@@ -2505,7 +2505,7 @@ Files changed:
 - `cmd/server/main_test.go`
 - `Dockerfile`
 - `compose.yaml`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `README.md`
 - `PROJECT_LOG.md`
 - `NEXT_STEPS.md`
@@ -2515,9 +2515,9 @@ Commands:
 - `go test ./internal/config -count=1`
 - `go test ./cmd/server -count=1`
 - `go test ./...`
-- `docker build -t plexplore:latest .`
-- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" plexplore:latest`
-- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false plexplore:latest`
+- `docker build -t exploripi:latest .`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" exploripi:latest`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false exploripi:latest`
 
 Pending:
 - Add optional startup self-check endpoint/diagnostic output for deployment-mode/security-mode summary to reduce operator confusion.
@@ -2605,7 +2605,7 @@ Implemented:
 - `LoadCurrentUserFromSession(...)`
 - `CurrentUserFromContext(...)`
 - Middleware behavior:
-- reads HttpOnly-style session cookie name (`plexplore_session`)
+- reads HttpOnly-style session cookie name (`exploripi_session`)
 - loads session + user on valid token
 - leaves request anonymous for missing/invalid tokens
 - keeps device API key auth path unchanged
@@ -2656,7 +2656,7 @@ Implemented:
 - uses `GetUserByEmail(...)`
 - verifies password hash via `VerifyPassword(...)`
 - creates server-side session via `CreateSession(...)`
-- sets `plexplore_session` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, expiry from session TTL)
+- sets `exploripi_session` cookie (`HttpOnly`, `SameSite=Lax`, path `/`, expiry from session TTL)
 - Logout flow details:
 - best-effort deletes current session token
 - clears cookie via `MaxAge=-1`
@@ -2671,7 +2671,7 @@ Implemented:
 - logout deletes session and clears cookie
 - Performed manual validation on running server instance against bootstrap DB:
 - `GET /login` returns 200
-- `POST /login` returns 303 with `Set-Cookie: plexplore_session=...`
+- `POST /login` returns 303 with `Set-Cookie: exploripi_session=...`
 - DB session count increases on login and decreases on logout
 - Updated README with login/logout endpoint and curl example.
 
@@ -2697,7 +2697,7 @@ Commands:
 - `curl -sS -w "%{http_code}\n" http://127.0.0.1:18080/login -o /tmp/login_page.html`
 - `curl -sS -D - -o /dev/null -X POST http://127.0.0.1:18080/login -H "Content-Type: application/x-www-form-urlencoded" --data "email=admin@example.com&password=testpass"`
 - `sqlite3 ./data/task3bootstrap.db "SELECT COUNT(*) FROM sessions;"`
-- `curl -sS -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18080/logout -H "Cookie: plexplore_session=<token>"`
+- `curl -sS -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18080/logout -H "Cookie: exploripi_session=<token>"`
 
 Pending:
 - Task 6: add explicit route protection helpers (`RequireUserSessionAuth`, redirect/401 behavior split).
@@ -2913,7 +2913,7 @@ Commands:
 - `go test ./... -count=1`
 - `APP_SQLITE_PATH=./data/task3bootstrap.db APP_SPOOL_DIR=./data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18083 go run ./cmd/server`
 - `curl -sS -b /tmp/t9_user2_cookie.txt -X POST http://127.0.0.1:18083/api/v1/devices -H "Content-Type: application/json" --data '{"name":"u2-self-device","source_type":"owntracks","api_key":"u2-self-key"}'`
-- `curl -sS -X POST http://127.0.0.1:18083/api/v1/devices -H "Content-Type: application/json" -H "Cookie: plexplore_session=<admin-token>" --data '{"user_id":3,"name":"admin-created-for-u3","source_type":"owntracks","api_key":"u3-admin-key"}'`
+- `curl -sS -X POST http://127.0.0.1:18083/api/v1/devices -H "Content-Type: application/json" -H "Cookie: exploripi_session=<admin-token>" --data '{"user_id":3,"name":"admin-created-for-u3","source_type":"owntracks","api_key":"u3-admin-key"}'`
 - `sqlite3 ./data/task3bootstrap.db "SELECT id,user_id,name FROM devices ORDER BY id;"`
 
 Pending:
@@ -3266,7 +3266,7 @@ Known issues:
 ### 2026-04-23 05:03 UTC - Phase 68 (Task 18: Final Hardening and Docs)
 Implemented:
 - Added lightweight CSRF protection primitives:
-- `plexplore_csrf` cookie generation and token helpers (`internal/api/csrf.go`)
+- `exploripi_csrf` cookie generation and token helpers (`internal/api/csrf.go`)
 - request token validation via hidden form field (`csrf_token`) or `X-CSRF-Token` header
 - Enforced CSRF validation on form/session-sensitive POST routes:
 - `POST /login`
@@ -3425,7 +3425,7 @@ Known issues:
 ### 2026-04-23 05:47 UTC - Phase 72 (Users Page Rename + Dark Mode)
 Implemented:
 - Renamed visible Users-management UI labels from "Admin Users" to "Users":
-- page title changed to `Plexplore Users`
+- page title changed to `Exploripi Users`
 - page heading changed to `Users`
 - top-nav admin link label on status/map pages changed from `Admin Users` to `Users`
 - Kept routes unchanged (`GET /ui/admin/users`) to avoid breaking existing navigation/API integrations.
@@ -3477,7 +3477,7 @@ Implemented:
 - Updated deployment/config docs and samples:
 - README security/deployment guidance for local HTTP dev vs direct HTTPS vs reverse-proxy TLS
 - `compose.yaml` includes explicit cookie/proxy env knobs
-- `deploy/systemd/plexplore.env.sample` includes cookie/proxy env knobs and usage notes
+- `deploy/systemd/exploripi.env.sample` includes cookie/proxy env knobs and usage notes
 - Added/updated tests for cookie security behavior:
 - local HTTP default path keeps non-secure cookies for dev flow
 - `always` mode enforces `Secure` session cookie
@@ -3502,7 +3502,7 @@ Files changed:
 - `cmd/server/main.go`
 - `README.md`
 - `compose.yaml`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `PROJECT_LOG.md`
 - `NEXT_STEPS.md`
 
@@ -3661,7 +3661,7 @@ Files changed:
 - `cmd/server/main.go`
 - `README.md`
 - `compose.yaml`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `PROJECT_LOG.md`
 - `NEXT_STEPS.md`
 
@@ -3693,7 +3693,7 @@ Implemented:
 - Added extra startup warning for inconsistent production cookie posture when `APP_DEPLOYMENT_MODE=production` but settings are not TLS-backed by default.
 - Updated production-oriented sample deployment defaults:
 - `compose.yaml`: `APP_DEPLOYMENT_MODE=production`, loopback-only host publish (`127.0.0.1:8080:8080`), `APP_COOKIE_SECURE_MODE=always`, `APP_EXPECT_TLS_TERMINATION=true`
-- `deploy/systemd/plexplore.env.sample`: production mode, loopback bind, secure cookie defaults, TLS-termination expectation enabled
+- `deploy/systemd/exploripi.env.sample`: production mode, loopback bind, secure cookie defaults, TLS-termination expectation enabled
 - Updated README with clearly separated local-development vs production HTTPS guidance and revised defaults.
 - Added config tests validating deployment-mode-derived defaults and explicit development override behavior.
 - Re-ran targeted + full test suite successfully.
@@ -3707,7 +3707,7 @@ Files changed:
 - `internal/config/config_test.go`
 - `cmd/server/main.go`
 - `compose.yaml`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `README.md`
 - `PROJECT_LOG.md`
 - `NEXT_STEPS.md`
@@ -4025,7 +4025,7 @@ Files changed:
 Commands:
 - `rg -n "unsafe-inline" internal README.md`
 - `rg -n "<style>|<script>" internal/api/ui.go internal/api/login.go`
-- `rg -n "APP_MAP_TILE_MODE|data-tile-mode|tile.openstreetmap.org" internal/api internal/config README.md Dockerfile compose.yaml deploy/systemd/plexplore.env.sample`
+- `rg -n "APP_MAP_TILE_MODE|data-tile-mode|tile.openstreetmap.org" internal/api internal/config README.md Dockerfile compose.yaml deploy/systemd/exploripi.env.sample`
 - `go test ./internal/api`
 - `go test ./internal/store`
 - `go test ./internal/tasks -run TestIntegration -count=1`
@@ -4104,7 +4104,7 @@ Files changed:
 - `cmd/server/main.go`
 - `README.md`
 - `compose.yaml`
-- `deploy/systemd/plexplore.env.sample`
+- `deploy/systemd/exploripi.env.sample`
 - `Dockerfile`
 - `PROJECT_LOG.md`
 - `NEXT_STEPS.md`
@@ -4175,7 +4175,7 @@ Files changed:
 - `NEXT_STEPS.md`
 
 Commands:
-- `gofmt -w /mnt/d/code/plexplore/internal/api/devices.go /mnt/d/code/plexplore/internal/api/visits.go /mnt/d/code/plexplore/internal/api/ui.go /mnt/d/code/plexplore/internal/api/password.go /mnt/d/code/plexplore/internal/api/password_test.go /mnt/d/code/plexplore/internal/api/devices_test.go /mnt/d/code/plexplore/internal/api/visits_test.go /mnt/d/code/plexplore/internal/api/users_test.go /mnt/d/code/plexplore/internal/api/login_test.go /mnt/d/code/plexplore/internal/tasks/multi_user_auth_integration_test.go /mnt/d/code/plexplore/cmd/migrate/main_test.go`
+- `gofmt -w /mnt/d/code/exploripi/internal/api/devices.go /mnt/d/code/exploripi/internal/api/visits.go /mnt/d/code/exploripi/internal/api/ui.go /mnt/d/code/exploripi/internal/api/password.go /mnt/d/code/exploripi/internal/api/password_test.go /mnt/d/code/exploripi/internal/api/devices_test.go /mnt/d/code/exploripi/internal/api/visits_test.go /mnt/d/code/exploripi/internal/api/users_test.go /mnt/d/code/exploripi/internal/api/login_test.go /mnt/d/code/exploripi/internal/tasks/multi_user_auth_integration_test.go /mnt/d/code/exploripi/cmd/migrate/main_test.go`
 - `go test ./internal/api`
 - `go test ./...`
 - `timeout 6s go run ./cmd/server`
@@ -4286,9 +4286,9 @@ Files changed:
 
 Commands:
 - `bash -n scripts/backup.sh scripts/restore.sh`
-- `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir /tmp/plexplore-backup-test/backups`
-- `scripts/restore.sh --archive /tmp/plexplore-backup-test/backups/plexplore-backup-20260424-165232.tar.gz --sqlite-path /tmp/plexplore-backup-test/restore-data/plexplore-restored.db --spool-dir /tmp/plexplore-backup-test/restore-data/spool --force`
-- `/bin/bash -lc "APP_SQLITE_PATH=/tmp/plexplore-backup-test/restore-data/plexplore-restored.db APP_SPOOL_DIR=/tmp/plexplore-backup-test/restore-data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18090 timeout 6s go run ./cmd/server"`
+- `scripts/backup.sh --sqlite-path ./data/exploripi.db --spool-dir ./data/spool --output-dir /tmp/exploripi-backup-test/backups`
+- `scripts/restore.sh --archive /tmp/exploripi-backup-test/backups/exploripi-backup-20260424-165232.tar.gz --sqlite-path /tmp/exploripi-backup-test/restore-data/exploripi-restored.db --spool-dir /tmp/exploripi-backup-test/restore-data/spool --force`
+- `/bin/bash -lc "APP_SQLITE_PATH=/tmp/exploripi-backup-test/restore-data/exploripi-restored.db APP_SPOOL_DIR=/tmp/exploripi-backup-test/restore-data/spool APP_HTTP_LISTEN_ADDR=127.0.0.1:18090 timeout 6s go run ./cmd/server"`
 - `go test ./...`
 
 Pending:
@@ -4314,8 +4314,8 @@ Implemented:
 - GPX export now streams `<trkpt>` entries row-by-row
 - export routes support optional `limit` with default `5000` and hard cap `20000`
 - Added downloadable filename headers:
-- GeoJSON: `Content-Disposition: attachment; filename="plexplore-export.geojson"`
-- GPX: `Content-Disposition: attachment; filename="plexplore-export.gpx"`
+- GeoJSON: `Content-Disposition: attachment; filename="exploripi-export.geojson"`
+- GPX: `Content-Disposition: attachment; filename="exploripi-export.gpx"`
 - Preserved existing filters: `device_id`, `from`, `to`.
 - Added/updated tests for:
 - points limit cap behavior

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 // AppendCanonicalPoints appends canonical points into the spool as sequence-

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 var (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"plexplore/internal/visits"
+	"exploripi/internal/visits"
 )
 
 // Visit is the persisted visit projection.

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/flusher"
-	"plexplore/internal/ingest"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
+	"exploripi/internal/buffer"
+	"exploripi/internal/flusher"
+	"exploripi/internal/ingest"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
 )
 
 type fakeSpoolAppender struct {

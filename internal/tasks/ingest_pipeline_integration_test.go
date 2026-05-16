@@ -16,12 +16,12 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"plexplore/internal/api"
-	"plexplore/internal/buffer"
-	"plexplore/internal/flusher"
-	"plexplore/internal/ingest"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
+	"exploripi/internal/api"
+	"exploripi/internal/buffer"
+	"exploripi/internal/flusher"
+	"exploripi/internal/ingest"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
 )
 
 type integrationEnv struct {

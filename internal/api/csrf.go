@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const csrfCookieName = "plexplore_csrf"
+const csrfCookieName = "exploripi_csrf"
 
 func ensureCSRFCookie(w http.ResponseWriter, r *http.Request, cookiePolicy CookieSecurityPolicy) string {
 	if cookie, err := r.Cookie(csrfCookieName); err == nil {

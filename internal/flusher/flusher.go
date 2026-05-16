@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/ingest"
-	"plexplore/internal/spool"
+	"exploripi/internal/buffer"
+	"exploripi/internal/ingest"
+	"exploripi/internal/spool"
 )
 
 type Store interface {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type createDeviceRequest struct {

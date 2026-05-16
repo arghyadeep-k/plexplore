@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 const loginPageHTML = `<!doctype html>
@@ -17,7 +17,7 @@ const loginPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Plexplore Login</title>
+  <title>Exploripi Login</title>
   <link rel="stylesheet" href="/ui/assets/app/app.css">
   <link rel="stylesheet" href="/ui/assets/app/login.css">
 </head>

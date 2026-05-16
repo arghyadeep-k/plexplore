@@ -1,10 +1,10 @@
 services:
-  plexplore:
+  exploripi:
     build:
       context: .
       dockerfile: Dockerfile
-    image: plexplore:latest
-    container_name: plexplore
+    image: exploripi:latest
+    container_name: exploripi
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
@@ -12,7 +12,7 @@ services:
       # This compose file is production-oriented by default.
       APP_DEPLOYMENT_MODE: "production"
       APP_HTTP_LISTEN_ADDR: "0.0.0.0:8080"
-      APP_SQLITE_PATH: "/data/plexplore.db"
+      APP_SQLITE_PATH: "/data/exploripi.db"
       APP_SPOOL_DIR: "/data/spool"
       APP_MIGRATIONS_DIR: "/app/migrations"
       APP_BUFFER_MAX_POINTS: "256"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 var (

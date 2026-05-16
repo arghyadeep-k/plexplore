@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"time"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/flusher"
-	"plexplore/internal/ingest"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
-	"plexplore/internal/visits"
+	"exploripi/internal/buffer"
+	"exploripi/internal/flusher"
+	"exploripi/internal/ingest"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
+	"exploripi/internal/visits"
 )
 
 type VisitSchedulerStatusProvider interface {
@@ -161,7 +161,7 @@ func RegisterRoutesWithDependencies(mux *http.ServeMux, deps Dependencies) {
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	resp := healthResponse{
 		Status:  "ok",
-		Service: "plexplore",
+		Service: "exploripi",
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

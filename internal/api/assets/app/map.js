@@ -115,16 +115,16 @@
         return (
           "<tr>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(v.start_at || "") +
+          window.ExploripiUI.escapeHTML(v.start_at || "") +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(v.end_at || "") +
+          window.ExploripiUI.escapeHTML(v.end_at || "") +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(formatDuration(v.start_at, v.end_at)) +
+          window.ExploripiUI.escapeHTML(formatDuration(v.start_at, v.end_at)) +
           "</td>" +
           "<td>" +
-          window.PlexploreUI.escapeHTML(v.device_id || "") +
+          window.ExploripiUI.escapeHTML(v.device_id || "") +
           "</td>" +
           "</tr>"
         );
@@ -186,7 +186,7 @@
           if (!d || !d.name || !d.id) {
             continue;
           }
-          const escapedName = window.PlexploreUI.escapeHTML(d.name);
+          const escapedName = window.ExploripiUI.escapeHTML(d.name);
           options.push(
             "<option value='" +
               String(d.id) +
@@ -226,13 +226,13 @@
             "visit #" +
               v.id +
               "<br>device: " +
-              window.PlexploreUI.escapeHTML(v.device_name || String(v.device_id || "")) +
+              window.ExploripiUI.escapeHTML(v.device_name || String(v.device_id || "")) +
               "<br>place: " +
-              window.PlexploreUI.escapeHTML(v.place_label || "") +
+              window.ExploripiUI.escapeHTML(v.place_label || "") +
               "<br>start: " +
-              window.PlexploreUI.escapeHTML(v.start_at || "") +
+              window.ExploripiUI.escapeHTML(v.start_at || "") +
               "<br>end: " +
-              window.PlexploreUI.escapeHTML(v.end_at || "") +
+              window.ExploripiUI.escapeHTML(v.end_at || "") +
               "<br>points: " +
               String(v.point_count || 0),
           );
@@ -300,9 +300,9 @@
                     "seq=" +
                       String(p.seq) +
                       "<br>" +
-                      window.PlexploreUI.escapeHTML(p.timestamp_utc || "") +
+                      window.ExploripiUI.escapeHTML(p.timestamp_utc || "") +
                       "<br>" +
-                      window.PlexploreUI.escapeHTML(p.device_id || ""),
+                      window.ExploripiUI.escapeHTML(p.device_id || ""),
                   )
                   .addTo(trackLayer);
               }
@@ -373,7 +373,7 @@
     });
   }
 
-  window.PlexploreUI.initThemeToggle();
+  window.ExploripiUI.initThemeToggle();
   setDefaultDateRangeIfEmpty();
   document.getElementById("load_btn").addEventListener("click", function () {
     loadPointsAndVisits();

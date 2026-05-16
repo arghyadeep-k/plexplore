@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/ingest"
-	"plexplore/internal/store"
+	"exploripi/internal/buffer"
+	"exploripi/internal/ingest"
+	"exploripi/internal/store"
 )
 
 const maxIngestBodyBytes = 1024 * 1024

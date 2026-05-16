@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 )
 
 type userResponse struct {

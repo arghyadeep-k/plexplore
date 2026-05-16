@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"plexplore/internal/config"
+	"exploripi/internal/config"
 )
 
 func TestValidateRuntimeSecurityConfig_ProductionRequiresSecureCookies(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"plexplore/internal/store"
+	"exploripi/internal/store"
 	"time"
 )
 
@@ -38,7 +38,7 @@ func TestStatusPageServedAtRoot(t *testing.T) {
 		t.Fatalf("expected html content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Plexplore Status") {
+	if !strings.Contains(body, "Exploripi Status") {
 		t.Fatalf("expected status page title in body, got %q", body)
 	}
 	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
@@ -135,7 +135,7 @@ func TestMapPageServedAtUIMap(t *testing.T) {
 		t.Fatalf("expected html content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Plexplore Map") {
+	if !strings.Contains(body, "Exploripi Map") {
 		t.Fatalf("expected map page title in body, got %q", body)
 	}
 	if !strings.Contains(body, `id="map"`) {
@@ -432,7 +432,7 @@ func TestAdminUsersPageServedForAdminSession(t *testing.T) {
 		t.Fatalf("expected 200 for admin users page, got %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<title>Plexplore Users</title>") || !strings.Contains(body, "<h1>Users</h1>") {
+	if !strings.Contains(body, "<title>Exploripi Users</title>") || !strings.Contains(body, "<h1>Users</h1>") {
 		t.Fatalf("expected users page title/heading in body, got %q", body)
 	}
 	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/users.js`) {
@@ -574,7 +574,7 @@ func TestAdminDevicesPageServedForAdminSession(t *testing.T) {
 		t.Fatalf("expected 200 for admin devices page, got %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<title>Plexplore Devices</title>") || !strings.Contains(body, "<h1>Devices</h1>") {
+	if !strings.Contains(body, "<title>Exploripi Devices</title>") || !strings.Contains(body, "<h1>Devices</h1>") {
 		t.Fatalf("expected devices page title/heading in body, got %q", body)
 	}
 	if !strings.Contains(body, `/ui/assets/app/common.js`) || !strings.Contains(body, `/ui/assets/app/devices.js`) {

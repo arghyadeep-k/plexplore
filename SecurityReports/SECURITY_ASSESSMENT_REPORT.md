@@ -1,15 +1,15 @@
-# Plexplore Security Assessment Report
+# Exploripi Security Assessment Report
 
 **Analyzer:** opencode/minimax-m2.5-free  
 **Date:** 2026-04-24  
-**Target:** Plexplore - Self-hosted Location Tracker  
+**Target:** Exploripi - Self-hosted Location Tracker  
 **Assessment Type:** Security Audit & Production Readiness
 
 ---
 
 ## Executive Summary
 
-Plexplore is a Go-based location tracker service designed for lightweight self-hosted deployment (e.g., Raspberry Pi Zero 2W). The codebase demonstrates strong security practices suitable for production use within its intended scope.
+Exploripi is a Go-based location tracker service designed for lightweight self-hosted deployment (e.g., Raspberry Pi Zero 2W). The codebase demonstrates strong security practices suitable for production use within its intended scope.
 
 **Verdict: CONDITIONALLY PRODUCTION READY**  
 The service is suitable for single-instance self-hosted deployment. For multi-instance or cloud deployments, minor architectural changes are required.
@@ -152,10 +152,10 @@ The service is suitable for single-instance self-hosted deployment. For multi-in
 | TLS Termination | ⚠️ EXTERNAL | Expect at reverse proxy (Docker configured for this) |
 | Secrets Storage | ✅ ENV-BASED | No hardcoded secrets |
 | File Permissions | ✅ CONFIGURABLE | umask 0o755 for directories |
-| Non-root User | ✅ CONFIGURED | Dockerfile runs as `plexplore` user |
+| Non-root User | ✅ CONFIGURED | Dockerfile runs as `exploripi` user |
 
 ### Dockerfile Security
-- Non-root execution: ✅ (`USER plexplore`)
+- Non-root execution: ✅ (`USER exploripi`)
 - Read-only filesystem recommended: ⚠️ (requires VOLUME for /data)
 - External ports: 8080 (non-privileged)
 
@@ -235,7 +235,7 @@ APP_RATE_LIMIT_ENABLED=true
 
 ## Conclusion
 
-Plexplore is a **well-engineered, security-conscious** application suitable for its intended lightweight self-hosted use case. The codebase implements appropriate security controls for a personal location tracker service.
+Exploripi is a **well-engineered, security-conscious** application suitable for its intended lightweight self-hosted use case. The codebase implements appropriate security controls for a personal location tracker service.
 
 **Production Readiness: APPROVED** (for single-instance self-hosted deployment)
 

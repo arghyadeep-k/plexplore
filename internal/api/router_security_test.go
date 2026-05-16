@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/buffer"
-	"plexplore/internal/spool"
-	"plexplore/internal/store"
+	"exploripi/internal/buffer"
+	"exploripi/internal/spool"
+	"exploripi/internal/store"
 )
 
 func expectPanic(t *testing.T, fn func()) {

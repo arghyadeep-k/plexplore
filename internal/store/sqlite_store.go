@@ -9,7 +9,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 const storePiPragmasSQL = `

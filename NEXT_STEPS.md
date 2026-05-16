@@ -27,8 +27,8 @@ Export streaming now performs preflight checks before sending `200 OK` and repor
 - `bash -n scripts/backup.sh scripts/restore.sh`
 - `bash -n scripts/backup.sh scripts/restore.sh scripts/verify_backup_restore.sh`
 - `make verify-backup-restore`
-- `scripts/backup.sh --sqlite-path ./data/plexplore.db --spool-dir ./data/spool --output-dir ./backups`
-- `scripts/restore.sh --archive ./backups/plexplore-backup-YYYYMMDD-HHMMSS.tar.gz --sqlite-path ./data/plexplore.db --spool-dir ./data/spool`
+- `scripts/backup.sh --sqlite-path ./data/exploripi.db --spool-dir ./data/spool --output-dir ./backups`
+- `scripts/restore.sh --archive ./backups/exploripi-backup-YYYYMMDD-HHMMSS.tar.gz --sqlite-path ./data/exploripi.db --spool-dir ./data/spool`
 - `curl -I https://your-domain.example`
 - `curl -I https://your-domain.example | rg -i 'strict-transport-security'`
 - `curl -I http://127.0.0.1:8080 | rg -i 'strict-transport-security'`
@@ -92,18 +92,18 @@ Export streaming now performs preflight checks before sending `200 OK` and repor
 - `go test ./internal/api -run 'TestListVisitsEndpoint_WithVisitLabelResolver' -count=1`
 - `go test ./internal/tasks -run TestRecoverFromSpool -count=1`
 - `go test ./internal/tasks -run TestIntegration -count=1`
-- `docker build -t plexplore:dev .`
-- `docker build -t plexplore:latest .`
-- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" plexplore:latest`
-- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false plexplore:latest`
-- `docker run --rm -p 18080:8080 -v $(pwd)/data:/data plexplore:dev`
+- `docker build -t exploripi:dev .`
+- `docker build -t exploripi:latest .`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" exploripi:latest`
+- `docker run --rm -p 127.0.0.1:8080:8080 -v "$(pwd)/data:/data" -e APP_DEPLOYMENT_MODE=development -e APP_COOKIE_SECURE_MODE=never -e APP_ALLOW_INSECURE_HTTP=true -e APP_EXPECT_TLS_TERMINATION=false exploripi:latest`
+- `docker run --rm -p 18080:8080 -v $(pwd)/data:/data exploripi:dev`
 - `docker compose up --build`
 - `docker compose down`
 - `make migrate`
 - `APP_SQLITE_PATH=./data/task1fresh.db make migrate`
 - `APP_SQLITE_PATH=./data/task3bootstrap.db make migrate`
-- `sqlite3 ./data/plexplore.db ".schema visits"`
-- `sqlite3 ./data/plexplore.db ".schema visit_place_cache"`
+- `sqlite3 ./data/exploripi.db ".schema visits"`
+- `sqlite3 ./data/exploripi.db ".schema visit_place_cache"`
 - `sqlite3 ./data/task1fresh.db ".schema users"`
 - `go run ./cmd/server`
 - `curl -sS http://127.0.0.1:8080/health`
@@ -121,7 +121,7 @@ Export streaming now performs preflight checks before sending `200 OK` and repor
 - `curl -sS http://127.0.0.1:8080/ui/map`
 - `curl -sS "http://127.0.0.1:8080/api/v1/exports/geojson?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
 - `curl -sS "http://127.0.0.1:8080/api/v1/exports/gpx?device_id=1&from=2026-04-22T00:00:00Z&to=2026-04-23T00:00:00Z"`
-- `sqlite3 ./data/plexplore.db "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM raw_points; SELECT COUNT(*) FROM points;"`
+- `sqlite3 ./data/exploripi.db "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM devices; SELECT COUNT(*) FROM raw_points; SELECT COUNT(*) FROM points;"`
 
 ## Notes
 Use segmented spool files, not a single giant file.

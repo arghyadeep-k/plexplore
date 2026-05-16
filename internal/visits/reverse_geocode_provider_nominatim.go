@@ -23,7 +23,7 @@ func NewNominatimProvider(baseURL, userAgent string, timeout time.Duration) *Nom
 		baseURL = "https://nominatim.openstreetmap.org/reverse"
 	}
 	if strings.TrimSpace(userAgent) == "" {
-		userAgent = "plexplore/1.0 (+self-hosted)"
+		userAgent = "exploripi/1.0 (+self-hosted)"
 	}
 	if timeout <= 0 {
 		timeout = 2 * time.Second

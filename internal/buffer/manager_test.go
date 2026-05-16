@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"plexplore/internal/ingest"
+	"exploripi/internal/ingest"
 )
 
 func makeRecord(seq uint64, deviceID string, payloadSize int) ingest.SpoolRecord {
