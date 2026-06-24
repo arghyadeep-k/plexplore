@@ -100,11 +100,34 @@ Binds to `127.0.0.1:8080` by default. Production defaults: secure cookies, insec
 
 ## Raspberry Pi (systemd)
 
+Build natively on the Pi, then install:
+
 ```bash
 go build -o exploripi-server ./cmd/server
 sudo ./scripts/install_systemd.sh
 sudo systemctl start exploripi
 ```
+
+### Target architecture & cross-compiling
+
+The Pi Zero 2 W (Cortex-A53) runs either a 64-bit or 32-bit Raspberry Pi OS. Match
+the build target to your OS:
+
+- 64-bit OS: `GOARCH=arm64`
+- 32-bit OS: `GOARCH=arm GOARM=7`
+
+`go-sqlite3` requires CGO, so cross-compiling from another machine needs a matching C
+cross-toolchain. For example, building a 64-bit binary on a Debian/Ubuntu workstation:
+
+```bash
+sudo apt-get install gcc-aarch64-linux-gnu
+CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
+  go build -o exploripi-server ./cmd/server
+```
+
+Compiling on the Pi itself works but is slow on 512 MB of RAM; enable swap if the CGO
+build is killed. The Docker image builds for ARM via emulation, e.g.
+`docker buildx build --platform linux/arm64 -t exploripi .`.
 
 ## Backup & Restore
 

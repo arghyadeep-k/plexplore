@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+# NOTE: The build stage intentionally runs at TARGETPLATFORM (not BUILDPLATFORM).
+# go-sqlite3 requires CGO, and there is no cross C toolchain installed here, so a
+# BUILDPLATFORM-pinned stage cannot cross-compile for the Pi (arm64/armhf). Running
+# at TARGETPLATFORM lets the native compiler do the work (under QEMU emulation when
+# building for ARM from an amd64 host, e.g. `docker buildx build --platform linux/arm64`).
+FROM golang:1.24-alpine AS build
 WORKDIR /src
 
 RUN apk add --no-cache build-base
@@ -10,11 +15,9 @@ RUN go mod download
 
 COPY . .
 
-ARG TARGETOS
-ARG TARGETARCH
 ENV CGO_ENABLED=1
-RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/exploripi-server ./cmd/server
-RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/exploripi-migrate ./cmd/migrate
+RUN go build -o /out/exploripi-server ./cmd/server
+RUN go build -o /out/exploripi-migrate ./cmd/migrate
 
 FROM alpine:3.22
 WORKDIR /app
