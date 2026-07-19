@@ -1,5 +1,10 @@
 # Project Log
 
+> Note: Phase numbers below are not strictly sequential/unique from Phase 79 onward — later sessions
+> branched from an earlier point and renumbered forward independently, so several numbers (e.g. 79-90)
+> appear more than once with different dates/content. Entries are otherwise append-only and individually
+> accurate; use the timestamp in each header, not the Phase number, to establish chronological order.
+
 ## Current Architecture
 Single-process Go monolith (standard library only) for Raspberry Pi Zero 2 W. Current scaffold includes HTTP server + `/health`, env-based config defaults, and placeholder modules for RAM buffer, segmented append-only spool, flusher/tasks, and future SQLite durable storage. Design remains single-writer friendly with low-RAM and recovery-first priorities.
 
